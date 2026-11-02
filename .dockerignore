@@ -1,0 +1,11 @@
+node_modules
+dist
+dist-server
+data
+data-test
+.git
+.env*
+!.env.example
+*.log
+
+mobile-apk-test

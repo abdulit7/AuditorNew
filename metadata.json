@@ -1,0 +1,6 @@
+{
+  "name": "AuditGrid — Retail & Distributor Infrastructure",
+  "description": "Enterprise master infrastructure for distributor and retail audit management covering geography hierarchies (cities, territories, locations, sub-locations, shops), product catalog groups (Group A & B), web/mobile RBAC roles, and the mobile auditor PWA surface.",
+  "requestFramePermissions": ["geolocation", "camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
