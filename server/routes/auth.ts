@@ -32,14 +32,12 @@ export function authRoutes(db: Knex, cfg: AppConfig) {
     res.clearCookie(COOKIE, { httpOnly: true, secure: cfg.COOKIE_SECURE, sameSite: 'strict', path: '/api/auth' });
 
   /**
-   * Where a user may sign in. Default: web users on the web, mobile users on mobile. An administrator can open the other
-   * surface per user (canLoginFromMobile / canLoginFromWeb) or for a whole role (role surface "Dual", or the matching one).
+   * Strict surface separation:
+   * - Web Portal (`surface === 'web'`) is exclusively for web management accounts (`user_type === 'web'`).
+   * - Mobile App APK (`surface === 'mobile'`) is exclusively for mobile auditor accounts (`user_type === 'mobile'`).
    */
   const surfaceAllowed = async (u: any, surface: 'web' | 'mobile') => {
-    if (surface === 'web' ? u.user_type === 'web' || !!u.can_login_web : u.user_type === 'mobile' || !!u.can_login_mobile) return true;
-    const role = await db('roles').where({ id: u.role_id }).first();
-    const rs = role?.surface;
-    return rs === 'Dual (Web + Mobile)' || rs === (surface === 'web' ? 'Web Dashboard' : 'Mobile PWA');
+    return surface === 'web' ? u.user_type === 'web' : u.user_type === 'mobile';
   };
 
   /** Native (Android test app) clients cannot use the SameSite cookie across origins: they hold the rotating refresh token themselves. */
@@ -107,8 +105,8 @@ export function authRoutes(db: Knex, cfg: AppConfig) {
       return res.status(403).json({
         error:
           surface === 'web'
-            ? 'This account is not enabled for Web Portal sign-in. Use "Mobile Browser" or ask an administrator.'
-            : 'This account is not enabled for mobile sign-in.',
+            ? 'Field auditor accounts can only sign in from the AuditGrid Mobile App (APK).'
+            : 'Web Portal accounts cannot sign in on the Mobile App (APK).',
       });
     }
 

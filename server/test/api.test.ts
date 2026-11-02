@@ -34,11 +34,12 @@ describe('authentication', () => {
     expect((await request(app).get('/api/bootstrap').set('Authorization', 'Bearer abc.def.ghi')).status).toBe(401);
   });
 
-  it('enforces the web/mobile surface rules', async () => {
-    expect((await login('bilal.cheema', 'Aud@103', 'web')).status).toBe(403); // mobile-only on web
-    expect((await login('farhan.bokhari', 'Mgr@2026', 'mobile')).status).toBe(403); // web user without canLoginFromMobile
-    expect((await login('abdul.rehman', 'Admin@2026', 'mobile')).status).toBe(200); // web user with canLoginFromMobile
-    expect((await login('bilal.cheema', 'Aud@103', 'mobile')).status).toBe(200);
+  it('enforces strict web vs mobile APK surface rules', async () => {
+    expect((await login('bilal.cheema', 'Aud@103', 'web')).status).toBe(403); // mobile auditor rejected on web
+    expect((await login('farhan.bokhari', 'Mgr@2026', 'mobile')).status).toBe(403); // web manager rejected on mobile APK
+    expect((await login('abdul.rehman', 'Admin@2026', 'mobile')).status).toBe(403); // web admin rejected on mobile APK
+    expect((await login('abdul.rehman', 'Admin@2026', 'web')).status).toBe(200); // web admin allowed on web
+    expect((await login('bilal.cheema', 'Aud@103', 'mobile')).status).toBe(200); // mobile auditor allowed on mobile APK
   });
 
   it('gives identical errors for wrong user and wrong password', async () => {
@@ -268,7 +269,7 @@ describe('photos', () => {
     expect(ok.status).toBe(201);
     expect((await request(app).get(ok.body.url)).status).toBe(401);
     expect((await request(app).get(ok.body.url).set(mob.auth())).headers['content-type']).toBe('image/png');
-    const other = await agentFor('abdul.rehman', 'Admin@2026', 'mobile');
+    const other = await agentFor('abdul.rehman', 'Admin@2026', 'web');
     expect((await request(app).get(ok.body.url).set(other.auth())).status).toBe(200); // manager can review
   });
 });

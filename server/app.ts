@@ -28,24 +28,52 @@ export function createApp(db: Knex, cfg: AppConfig) {
 
   app.use(
     helmet({
+      frameguard: false,
       contentSecurityPolicy: {
         useDefaults: true,
         directives: {
           'default-src': ["'self'"],
-          // Google Maps is allowed only when a key is configured.
-          'script-src': ["'self'", ...(cfg.GOOGLE_MAPS_API_KEY ? ['https://maps.googleapis.com', 'https://maps.gstatic.com'] : [])],
+          // MapLibre + OpenFreeMap works without any API key; Google Maps is allowed as an optional upgrade when a key is configured.
+          'script-src': [
+            "'self'",
+            'blob:',
+            ...(cfg.isProd ? [] : ["'unsafe-inline'", "'unsafe-eval'"]),
+            ...(cfg.GOOGLE_MAPS_API_KEY ? ['https://maps.googleapis.com', 'https://maps.gstatic.com'] : []),
+          ],
           'worker-src': ["'self'", 'blob:'],
-          'img-src': ["'self'", 'data:', 'blob:', ...(cfg.GOOGLE_MAPS_API_KEY ? ['https://maps.gstatic.com', 'https://maps.googleapis.com', 'https://*.ggpht.com', 'https://*.googleusercontent.com'] : [])],
+          'child-src': ["'self'", 'blob:'],
+          'img-src': [
+            "'self'",
+            'data:',
+            'blob:',
+            'https:',
+            ...(cfg.GOOGLE_MAPS_API_KEY ? ['https://maps.gstatic.com', 'https://maps.googleapis.com', 'https://*.ggpht.com', 'https://*.googleusercontent.com'] : []),
+          ],
           'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
-          'font-src': ["'self'", 'https://fonts.gstatic.com', 'data:'],
-          'connect-src': ["'self'", ...(cfg.GOOGLE_MAPS_API_KEY ? ['https://maps.googleapis.com'] : [])],
-          'frame-ancestors': ["'none'"],
+          'font-src': ["'self'", 'https://fonts.gstatic.com', 'https://tiles.openfreemap.org', 'https://*.openfreemap.org', 'data:'],
+          'connect-src': [
+            "'self'",
+            'blob:',
+            'ws:',
+            'wss:',
+            'https://tiles.openfreemap.org',
+            'https://*.openfreemap.org',
+            'https://router.project-osrm.org',
+            'https://api.openrouteservice.org',
+            'https://tile.openstreetmap.org',
+            'https://*.tile.openstreetmap.org',
+            'https://*.basemaps.cartocdn.com',
+            ...(cfg.GOOGLE_MAPS_API_KEY ? ['https://maps.googleapis.com', 'https://*.googleapis.com', 'https://*.gstatic.com'] : []),
+          ],
+          'frame-ancestors': null,
           'upgrade-insecure-requests': cfg.isProd ? [] : null,
         },
       },
       hsts: cfg.isProd ? { maxAge: 31_536_000, includeSubDomains: true } : false,
       referrerPolicy: { policy: 'same-origin' },
       crossOriginEmbedderPolicy: false,
+      crossOriginResourcePolicy: false,
+      crossOriginOpenerPolicy: false,
     })
   );
   app.use((_req, res, next) => {
@@ -77,7 +105,8 @@ export function createApp(db: Knex, cfg: AppConfig) {
     if (!origin) return next();
     let host = '';
     try { host = new URL(origin).host; } catch { /* invalid origin */ }
-    if (host && host === req.get('host')) return next();
+    const allowedHosts = [req.get('host'), req.get('x-forwarded-host')].filter(Boolean);
+    if (host && allowedHosts.includes(host)) return next();
     if (cfg.corsOrigins.includes(origin)) return next();
     res.status(403).json({ error: 'Cross-site request blocked.' });
   });
@@ -108,9 +137,9 @@ export function createApp(db: Knex, cfg: AppConfig) {
   app.use('/api', guarded);
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found.' }));
 
-  // Serve the built SPA (same origin => cookies stay SameSite=Strict, no CORS).
+  // Serve the built SPA in production (in development, Vite middleware serves the frontend).
   const dist = path.resolve(process.cwd(), 'dist');
-  if (fs.existsSync(path.join(dist, 'index.html'))) {
+  if (cfg.isProd && fs.existsSync(path.join(dist, 'index.html'))) {
     app.use(express.static(dist, { index: false, maxAge: '1h', setHeaders: (res, p) => {
       if (/\/assets\//.test(p)) res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
       if (/(sw\.js|manifest\.webmanifest)$/.test(p)) res.setHeader('Cache-Control', 'no-cache');

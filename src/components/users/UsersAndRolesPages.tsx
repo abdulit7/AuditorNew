@@ -135,7 +135,7 @@ export function UsersAndRolesPages({
         assignedGroupIds: groups.map((g) => g.id),
         status: 'Active',
         lastActiveAt: '2026-10-31 01:00',
-        mobileAppVersion: 'Mobile Browser v2.4',
+        mobileAppVersion: 'Android APK v2.4',
       });
       setShowPassword(true);
       setUserModalOpen(true);
@@ -226,13 +226,7 @@ export function UsersAndRolesPages({
       }
 
       const finalSurface: RoleSurface =
-        editingUser.userType === 'mobile'
-          ? editingUser.canLoginFromWeb
-            ? 'Dual (Web + Mobile)'
-            : 'Mobile PWA'
-          : editingUser.canLoginFromMobile
-          ? 'Dual (Web + Mobile)'
-          : 'Web Dashboard';
+        editingUser.userType === 'mobile' ? 'Mobile PWA' : 'Web Dashboard';
 
       const finalUser: AppUser = {
         ...editingUser,
@@ -242,23 +236,21 @@ export function UsersAndRolesPages({
           editingUser.email.trim() ||
           `${editingUser.username.trim().toLowerCase()}@field.auditgrid.pk`,
         surfaceAccess: finalSurface,
-        canLoginFromMobile:
-          editingUser.userType === 'mobile' ? true : editingUser.canLoginFromMobile,
-        canLoginFromWeb:
-          editingUser.userType === 'web' ? true : !!editingUser.canLoginFromWeb,
+        canLoginFromMobile: editingUser.userType === 'mobile',
+        canLoginFromWeb: editingUser.userType === 'web',
       };
 
       const exists = users.some((u) => u.id === finalUser.id);
       if (exists) {
         setUsers((prev) => prev.map((u) => (u.id === finalUser.id ? finalUser : u)));
-        onToast(`Updated ${finalUser.userType === 'mobile' ? 'Mobile Auditor' : 'Web User'} "${finalUser.fullName}".`);
+        onToast(`Updated ${finalUser.userType === 'mobile' ? 'Mobile Auditor (APK)' : 'Web User'} "${finalUser.fullName}".`);
       } else {
         setUsers((prev) => [finalUser, ...prev]);
         onToast(
           `Created ${
             finalUser.userType === 'mobile'
-              ? 'Mobile Auditor (Mobile browser login only)'
-              : 'Web User'
+              ? 'Mobile Auditor (Android APK login only)'
+              : 'Web User (Web Portal login only)'
           } "${finalUser.fullName}".`
         );
       }
@@ -312,10 +304,10 @@ export function UsersAndRolesPages({
         <div className="flex flex-wrap items-center justify-between gap-4 mb-5">
           <div>
             <h1 className="text-2xl font-bold text-[#0F172A]">
-              User Accounts & Surface Access Control
+              User Accounts &amp; Surface Access Control
             </h1>
             <p className="text-sm text-[#475569]">
-              Manage <strong>Mobile Users</strong> (mobile browser login only, scoped to selected territories&apos; Geography &amp; Distributors) and <strong>Web Users</strong> (web login + optional mobile login checkbox).
+              Manage <strong>Mobile Users</strong> (Android APK login only, scoped to assigned territories) and <strong>Web Users</strong> (Web Management Portal login only).
             </p>
           </div>
 
@@ -365,7 +357,7 @@ export function UsersAndRolesPages({
               }`}
             >
               <Smartphone className="w-4 h-4" />
-              <span>Mobile Users (Auditors — Mobile Browser Only)</span>
+              <span>Mobile Users (Auditors — Android APK Only)</span>
               <span className="font-mono text-xs px-2 py-0.5 rounded bg-[#E9EEF5] text-[#0F172A]">
                 {mobileUsersList.length}
               </span>
@@ -382,7 +374,7 @@ export function UsersAndRolesPages({
               }`}
             >
               <Monitor className="w-4 h-4" />
-              <span>Web Users (Web Dashboard + Optional Mobile Login)</span>
+              <span>Web Users (Web Portal Managers &amp; Admins)</span>
               <span className="font-mono text-xs px-2 py-0.5 rounded bg-[#E9EEF5] text-[#0F172A]">
                 {webUsersList.length}
               </span>
@@ -402,8 +394,8 @@ export function UsersAndRolesPages({
                   <th className="py-2.5 px-3">
                     {userTab === 'mobile' ? 'Auditor Name & Mobile' : 'Web User Name & Contact'}
                   </th>
-                  <th className="py-2.5 px-3">Login User & Password</th>
-                  <th className="py-2.5 px-3">Browser Login Access</th>
+                  <th className="py-2.5 px-3">Login User &amp; Password</th>
+                  <th className="py-2.5 px-3">Surface Access</th>
                   <th className="py-2.5 px-3">Selected Cities</th>
                   <th className="py-2.5 px-3">Selected Territories & Scoped Entities</th>
                   <th className="py-2.5 px-3">Status</th>
@@ -470,47 +462,15 @@ export function UsersAndRolesPages({
                           <div>
                             <SurfaceAccessLabel surface="Mobile PWA" />
                             <div className="text-[11px] text-[#475569] mt-0.5">
-                              Mobile Browser Only · Geography &amp; Distributors View
+                              Android APK Only · Scoped Field Audits
                             </div>
                           </div>
                         ) : (
-                          <div className="space-y-1">
-                            <SurfaceAccessLabel
-                              surface={
-                                usr.canLoginFromMobile
-                                  ? 'Dual (Web + Mobile)'
-                                  : 'Web Dashboard'
-                              }
-                            />
-                            <label className="flex items-center gap-1.5 text-xs text-[#475569] cursor-pointer">
-                              <input
-                                type="checkbox"
-                                checked={usr.canLoginFromMobile}
-                                onChange={() => {
-                                  const nextVal = !usr.canLoginFromMobile;
-                                  setUsers((prev) =>
-                                    prev.map((u) =>
-                                      u.id === usr.id
-                                        ? {
-                                            ...u,
-                                            canLoginFromMobile: nextVal,
-                                            surfaceAccess: nextVal
-                                              ? 'Dual (Web + Mobile)'
-                                              : 'Web Dashboard',
-                                          }
-                                        : u
-                                    )
-                                  );
-                                  onToast(
-                                    `${usr.fullName}: Mobile browser login ${
-                                      nextVal ? 'enabled' : 'disabled'
-                                    }.`
-                                  );
-                                }}
-                                className="rounded border-[#CBD5E1]"
-                              />
-                              <span>Also can login from mobile</span>
-                            </label>
+                          <div>
+                            <SurfaceAccessLabel surface="Web Dashboard" />
+                            <div className="text-[11px] text-[#475569] mt-0.5">
+                              Web Management Portal Only
+                            </div>
                           </div>
                         )}
                       </td>
@@ -617,8 +577,8 @@ export function UsersAndRolesPages({
                   </div>
                   <p className="text-xs text-[#475569] mt-0.5">
                     {editingUser.userType === 'mobile'
-                      ? 'Log in restricted to Mobile Browser only. Select one or multiple Cities, then select one or multiple Territories from those cities.'
-                      : 'Can log in from Web Browser, plus optional Mobile Browser login checkbox.'}
+                      ? 'Signs in exclusively via the AuditGrid Android App (APK). Select one or multiple Cities and Territories.'
+                      : 'Signs in exclusively via the Web Management Portal.'}
                   </p>
                 </div>
                 <button
@@ -717,7 +677,7 @@ export function UsersAndRolesPages({
                     </div>
                   </div>
 
-                  {/* Web User Specific Fields: Email, Role, and "Also can login from mobile" Checkbox */}
+                  {/* Web User Specific Fields: Email & Web Role */}
                   {editingUser.userType === 'web' && (
                     <>
                       <div>
@@ -756,46 +716,29 @@ export function UsersAndRolesPages({
                             ))}
                         </select>
                       </div>
-
-                      <div className="sm:col-span-2 p-3.5 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg">
-                        <label className="flex items-center gap-2.5 text-sm font-semibold text-[#0F172A] cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={editingUser.canLoginFromMobile}
-                            onChange={(e) =>
-                              setEditingUser({
-                                ...editingUser,
-                                canLoginFromMobile: e.target.checked,
-                              })
-                            }
-                            className="w-4 h-4 rounded border-[#CBD5E1]"
-                          />
-                          <span>Also can login from Mobile Browser</span>
-                        </label>
-                        <p className="text-xs text-[#475569] mt-1 pl-6">
-                          When checked, this Web User can log in on both the desktop Web Dashboard and the Mobile Browser View.
-                        </p>
-                      </div>
                     </>
                   )}
 
                   {editingUser.userType === 'mobile' && (
-                    <div className="sm:col-span-2 p-3.5 bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg">
-                      <label className="flex items-center gap-2.5 text-sm font-semibold text-[#0F172A] cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={!!editingUser.canLoginFromWeb}
-                          onChange={(e) =>
-                            setEditingUser({ ...editingUser, canLoginFromWeb: e.target.checked })
-                          }
-                          className="w-4 h-4 rounded border-[#CBD5E1]"
-                        />
-                        <span>Also can sign in on the Web Portal</span>
+                    <div className="sm:col-span-2">
+                      <label className="block text-xs font-semibold text-[#0F172A] mb-1">
+                        Mobile Auditor Role (APK)
                       </label>
-                      <p className="text-xs text-[#475569] mt-1 pl-6">
-                        An auditor on the web sees only the audit forms and audit plans, the same as on the phone. No management pages.
-                        (A role set to “Dual” also allows both.)
-                      </p>
+                      <select
+                        value={editingUser.roleId}
+                        onChange={(e) =>
+                          setEditingUser({ ...editingUser, roleId: e.target.value })
+                        }
+                        className="w-full px-3 py-2 text-sm bg-white border border-[#CBD5E1] rounded focus-ring"
+                      >
+                        {roles
+                          .filter((r) => r.surface === 'Mobile PWA')
+                          .map((r) => (
+                            <option key={r.id} value={r.id}>
+                              {r.name} ({r.code})
+                            </option>
+                          ))}
+                      </select>
                     </div>
                   )}
                 </div>
@@ -1303,7 +1246,7 @@ export function UsersAndRolesPages({
                     Target Surface
                   </label>
                   <select
-                    value={editingRole.surface}
+                    value={editingRole.surface === 'Dual (Web + Mobile)' ? 'Web Dashboard' : editingRole.surface}
                     onChange={(e) =>
                       setEditingRole({
                         ...editingRole,
@@ -1312,9 +1255,8 @@ export function UsersAndRolesPages({
                     }
                     className="w-full px-3 py-2 text-sm bg-white border border-[#CBD5E1] rounded focus-ring"
                   >
-                    <option value="Web Dashboard">Web Dashboard</option>
-                    <option value="Mobile PWA">Mobile PWA</option>
-                    <option value="Dual (Web + Mobile)">Dual (Web + Mobile)</option>
+                    <option value="Web Dashboard">Web Dashboard (Portal Managers)</option>
+                    <option value="Mobile PWA">Mobile App (Android APK Auditors)</option>
                   </select>
                 </div>
                 <div className="sm:col-span-2">

@@ -127,37 +127,26 @@ describe('custom forms, submissions, plans and analytics', () => {
   });
 });
 
-describe('surface access (user setting or role)', () => {
+describe('surface access (strict Web Portal vs Mobile APK split)', () => {
   const login = (u: string, p: string, surface: 'web' | 'mobile') => request(app).post('/api/auth/login').send({ username: u, password: p, surface });
 
-  it('keeps the defaults: auditor mobile-only, manager web-only', async () => {
+  it('keeps strict separation: auditors on mobile APK only, managers/admins on Web Portal only', async () => {
     expect((await login('bilal.cheema', 'Aud@103', 'web')).status).toBe(403);
     expect((await login('farhan.bokhari', 'Mgr@2026', 'mobile')).status).toBe(403);
+    expect((await login('abdul.rehman', 'Admin@2026', 'mobile')).status).toBe(403);
+    expect((await login('abdul.rehman', 'Admin@2026', 'web')).status).toBe(200);
+    expect((await login('bilal.cheema', 'Aud@103', 'mobile')).status).toBe(200);
   });
 
-  it('an admin can open web sign-in for one auditor, and a role set to Dual opens both', async () => {
+  it('ignores cross-surface flags so mobile users never sign in on web and web users never sign in on mobile', async () => {
     const adm = await tok('abdul.rehman', 'Admin@2026', 'web');
     const users = (await request(app).get('/api/users').set(adm)).body as any[];
     const bil = users.find((u) => u.username === 'bilal.cheema');
     expect(bil.canLoginFromWeb).toBe(false);
     const put = await request(app).put(`/api/users/${bil.id}`).set(adm).send({ ...bil, password: '', canLoginFromWeb: true });
     expect(put.status).toBe(200);
-    const w = await login('bilal.cheema', 'Aud@103', 'web');
-    expect(w.status).toBe(200);
-    expect(w.body.surface).toBe('web');
-    // still no management rights on the web
-    const t = { Authorization: `Bearer ${w.body.accessToken}` };
-    expect((await request(app).get('/api/analytics/summary').set(t)).status).toBe(403);
-    expect((await request(app).get('/api/users').set(t)).status).toBe(403);
-    // turn it back off: the next refresh/login is refused
-    await request(app).put(`/api/users/${bil.id}`).set(adm).send({ ...bil, password: '', canLoginFromWeb: false });
+    expect(put.body.canLoginFromWeb).toBe(false);
     expect((await login('bilal.cheema', 'Aud@103', 'web')).status).toBe(403);
-
-    const roles = (await request(app).get('/api/roles').set(adm)).body as any[];
-    const farhan = users.find((u) => u.username === 'farhan.bokhari');
-    const mgrRole = roles.find((r) => r.id === farhan.roleId);
-    await request(app).put(`/api/roles/${mgrRole.id}`).set(adm).send({ ...mgrRole, surface: 'Dual (Web + Mobile)' });
-    expect((await login('farhan.bokhari', 'Mgr@2026', 'mobile')).status).toBe(200);
   });
 });
 

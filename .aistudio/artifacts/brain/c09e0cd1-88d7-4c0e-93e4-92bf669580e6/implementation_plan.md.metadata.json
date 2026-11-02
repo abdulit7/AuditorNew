@@ -1,0 +1,6 @@
+{
+  "summary":  "Implementation plan for separating the AuditGrid Web Management Portal from the standalone Android APK auditor client: enforcing Web-only browser login, removing the in-browser Auditor Mobile View tab and cross-surface login toggles, preserving the Audit Forms live preview, and keeping all mobile API endpoints active for the Android APK.",
+  "updatedAt":  "2026-11-02T11:33:29.908435043Z",
+  "requestFeedback":  true,
+  "userFacing":  true
+}

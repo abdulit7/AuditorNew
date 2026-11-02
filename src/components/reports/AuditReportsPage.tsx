@@ -23,8 +23,12 @@ import {
   ActivePageId,
 } from '../../types/infrastructure';
 import { formatPKR, ProductGroupTag } from '../common/StatusBadges';
+import { GoogleMap, DirectionsButton, MapLegend } from '../maps/GoogleMap';
+import { directionsUrl, hasCoords } from '../../utils/maps';
 
 interface AuditReportsPageProps {
+  apiKey?: string;
+  orsApiKey?: string;
   users: AppUser[];
   cities: City[];
   territories: Territory[];
@@ -42,6 +46,8 @@ type CombinedReportItem =
   | { kind: 'retail-shop'; report: RetailMarketShopAuditReport };
 
 export function AuditReportsPage({
+  apiKey,
+  orsApiKey,
   users,
   cities,
   subLocations,
@@ -60,6 +66,7 @@ export function AuditReportsPage({
 
   // Displayed Report State — only populated after pressing "Show Report" button
   const [displayedReportId, setDisplayedReportId] = useState<string | null>(null);
+  const [showReportRoute, setShowReportRoute] = useState(true);
 
   // Eligible mobile/field users for the User dropdown
   const auditorUsers = users.filter(
@@ -451,6 +458,73 @@ export function AuditReportsPage({
                       </div>
                     </div>
                   </div>
+
+                  {/* Interactive MapLibre + OpenFreeMap Verification Map */}
+                  <div className="space-y-2 pt-1 print:hidden">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <MapLegend
+                        kinds={[
+                          { kind: 'distributor', label: 'Registered Distributor (with geofence circle)' },
+                          { kind: 'audit', label: 'Auditor Mobile Submission GPS' },
+                        ]}
+                      />
+                      <div className="flex items-center gap-2">
+                        <label className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#1E3A5F] cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={showReportRoute}
+                            onChange={(e) => setShowReportRoute(e.target.checked)}
+                          />
+                          <span>In-app route line</span>
+                        </label>
+                        <DirectionsButton
+                          lat={displayedReport.distributorLat}
+                          lng={displayedReport.distributorLng}
+                          from={{ lat: displayedReport.mobileLat, lng: displayedReport.mobileLng }}
+                          label="Directions"
+                        />
+                      </div>
+                    </div>
+                    <GoogleMap
+                      apiKey={apiKey}
+                      orsApiKey={orsApiKey}
+                      height={240}
+                      markers={[
+                        {
+                          id: 'dist-reg',
+                          lat: displayedReport.distributorLat,
+                          lng: displayedReport.distributorLng,
+                          label: displayedReport.distributorSetupName,
+                          sub: `Registered Warehouse · Radius ${displayedReport.allowedRadiusMeters}m`,
+                          kind: 'distributor',
+                        },
+                        {
+                          id: 'aud-mob',
+                          lat: displayedReport.mobileLat,
+                          lng: displayedReport.mobileLng,
+                          label: `Auditor: ${displayedReport.auditorName}`,
+                          sub: `Submitted ${displayedReport.submittedDate} ${displayedReport.submittedTime} · ±${Math.round(displayedReport.mobileAccuracyMeters)}m`,
+                          kind: 'audit',
+                        },
+                      ]}
+                      circles={[
+                        {
+                          lat: displayedReport.distributorLat,
+                          lng: displayedReport.distributorLng,
+                          radius: displayedReport.allowedRadiusMeters,
+                          color: displayedReport.locationMatched ? '#16A34A' : '#DC2626',
+                        },
+                      ]}
+                      routeWaypoints={
+                        showReportRoute
+                          ? [
+                              { lat: displayedReport.mobileLat, lng: displayedReport.mobileLng },
+                              { lat: displayedReport.distributorLat, lng: displayedReport.distributorLng },
+                            ]
+                          : undefined
+                      }
+                    />
+                  </div>
                 </div>
 
                 {/* Formal Printable Stock Audit Report Sheet */}
@@ -699,6 +773,64 @@ export function AuditReportsPage({
                       </span>
                     </div>
                   </div>
+
+                  {/* Interactive MapLibre + OpenFreeMap Verification Map for Audited Shops */}
+                  {shopReport.shopAudits.length > 0 && (
+                    <div className="space-y-2 pt-1 print:hidden">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <MapLegend
+                          kinds={[
+                            { kind: 'shop', label: 'Registered Shop (with geofence circle)' },
+                            { kind: 'audit', label: 'Auditor Mobile Submission GPS' },
+                          ]}
+                        />
+                        <label className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#1E3A5F] cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={showReportRoute}
+                            onChange={(e) => setShowReportRoute(e.target.checked)}
+                          />
+                          <span>In-app route line across audited shops</span>
+                        </label>
+                      </div>
+                      <GoogleMap
+                        apiKey={apiKey}
+                        orsApiKey={orsApiKey}
+                        height={260}
+                        markers={shopReport.shopAudits.flatMap((sa) => [
+                          {
+                            id: `shop-${sa.shopId}`,
+                            lat: sa.shopLat,
+                            lng: sa.shopLng,
+                            label: sa.shopName,
+                            sub: `${sa.shopCode} · Registered Shop`,
+                            kind: 'shop' as const,
+                          },
+                          {
+                            id: `aud-${sa.shopId}`,
+                            lat: sa.mobileLat,
+                            lng: sa.mobileLng,
+                            label: `Audit at ${sa.shopName}`,
+                            sub: `${sa.locationMatched ? 'Matched' : 'Mismatch'} (${sa.distanceMeters}m) · ${sa.auditedAt}`,
+                            kind: 'audit' as const,
+                          },
+                        ])}
+                        circles={shopReport.shopAudits.map((sa) => ({
+                          lat: sa.shopLat,
+                          lng: sa.shopLng,
+                          radius: sa.allowedRadiusMeters,
+                          color: sa.locationMatched ? '#16A34A' : '#DC2626',
+                        }))}
+                        routeWaypoints={
+                          showReportRoute && shopReport.shopAudits.length >= 2
+                            ? shopReport.shopAudits
+                                .filter((sa) => hasCoords({ lat: sa.shopLat, lng: sa.shopLng }))
+                                .map((sa) => ({ lat: sa.shopLat, lng: sa.shopLng }))
+                            : undefined
+                        }
+                      />
+                    </div>
+                  )}
                 </div>
 
                 {/* Printable Retail Market Shop Audit Sheet */}
@@ -816,8 +948,16 @@ export function AuditReportsPage({
                               <div className="text-[10px] text-[#475569]">
                                 {item.mobileLat.toFixed(4)}, {item.mobileLng.toFixed(4)}
                               </div>
-                              <div className="text-[10px] text-[#475569]">
-                                {item.auditedAt}
+                              <div className="text-[10px] text-[#475569] flex items-center justify-between gap-1">
+                                <span>{item.auditedAt}</span>
+                                <a
+                                  href={directionsUrl(item.shopLat, item.shopLng)}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="font-sans font-bold text-[#2563EB] hover:underline print:hidden"
+                                >
+                                  Directions ↗
+                                </a>
                               </div>
                             </td>
                             <td className="py-2.5 px-3 align-top">

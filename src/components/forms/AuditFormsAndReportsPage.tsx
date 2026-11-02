@@ -77,9 +77,7 @@ export function AuditFormsAndReportsPage({
     auditForms[0]?.id || 'form-distributor-product-audit'
   );
 
-  const mobileEligibleUsers = users.filter(
-    (u) => u.userType === 'mobile' || (u.userType === 'web' && u.canLoginFromMobile)
-  );
+  const mobileEligibleUsers = users.filter((u) => u.userType === 'mobile');
   const activeAuditor =
     mobileEligibleUsers.find((u) => u.id === selectedMobileAuditorId) ||
     mobileEligibleUsers[0] ||

@@ -12,8 +12,8 @@ const UserBody = z.object({
   id: idSchema.optional(),
   code: z.string().trim().min(1).max(64),
   userType: z.enum(['web', 'mobile']),
-  canLoginFromMobile: z.boolean(),
-  canLoginFromWeb: z.boolean().default(false),
+  canLoginFromMobile: z.boolean().optional().default(false),
+  canLoginFromWeb: z.boolean().optional().default(false),
   username: z.string().trim().regex(/^[A-Za-z0-9._-]{3,64}$/, 'Username: 3-64 letters, numbers, . _ -'),
   password: z.string().max(128).optional().default(''),
   fullName: z.string().trim().min(1).max(160),
@@ -92,7 +92,7 @@ export function userRoutes(db: Knex) {
     await db('users').insert({
       id, code: b.code, username: b.username, password_hash: await hashPassword(b.password),
       full_name: b.fullName, email: b.email, phone: b.phone, role_id: b.roleId, user_type: b.userType,
-      can_login_mobile: b.userType === 'mobile' ? true : b.canLoginFromMobile, can_login_web: b.userType === 'web' ? true : b.canLoginFromWeb, status: b.status,
+      can_login_mobile: b.userType === 'mobile', can_login_web: b.userType === 'web', status: b.status,
       assigned_city_ids: toJson(b.assignedCityIds), assigned_territory_ids: toJson(b.assignedTerritoryIds),
       assigned_group_ids: toJson(b.assignedGroupIds), mobile_app_version: b.mobileAppVersion ?? null,
       must_change_password: false, created_at: now, updated_at: now,
@@ -121,7 +121,7 @@ export function userRoutes(db: Knex) {
       return res.status(409).json({ error: `Code "${b.code}" is already used.` });
     const patch: any = {
       code: b.code, username: b.username, full_name: b.fullName, email: b.email, phone: b.phone,
-      role_id: b.roleId, user_type: b.userType, can_login_mobile: b.userType === 'mobile' ? true : b.canLoginFromMobile, can_login_web: b.userType === 'web' ? true : b.canLoginFromWeb,
+      role_id: b.roleId, user_type: b.userType, can_login_mobile: b.userType === 'mobile', can_login_web: b.userType === 'web',
       status: b.status, assigned_city_ids: toJson(b.assignedCityIds), assigned_territory_ids: toJson(b.assignedTerritoryIds),
       assigned_group_ids: toJson(b.assignedGroupIds), updated_at: sqlTime(),
     };

@@ -10,11 +10,13 @@ import {
   XCircle,
   Monitor,
   Smartphone,
-  Layers,
   Navigation,
   Crosshair,
+  ExternalLink,
 } from 'lucide-react';
 import { GPSVerificationStatus, EntityStatus, RoleSurface } from '../../types/infrastructure';
+import { GoogleMap } from '../maps/GoogleMap';
+import { directionsUrl, hasCoords } from '../../utils/maps';
 
 export function formatPKR(amount: number): string {
   return `Rs. ${amount.toLocaleString('en-PK')}`;
@@ -114,26 +116,18 @@ export function ProductGroupTag({ groupName }: { groupName: string }) {
 }
 
 export function SurfaceAccessLabel({ surface }: { surface: RoleSurface }) {
-  if (surface === 'Web Dashboard') {
-    return (
-      <span className="inline-flex items-center gap-1.5 text-xs font-medium text-[#1E3A5F] whitespace-nowrap shrink-0">
-        <Monitor className="w-3.5 h-3.5 text-[#2563EB] shrink-0" aria-hidden="true" />
-        <span>Web Dashboard</span>
-      </span>
-    );
-  }
   if (surface === 'Mobile PWA') {
     return (
       <span className="inline-flex items-center gap-1.5 text-xs font-medium text-teal-800 whitespace-nowrap shrink-0">
         <Smartphone className="w-3.5 h-3.5 text-teal-700 shrink-0" aria-hidden="true" />
-        <span>Mobile PWA</span>
+        <span>Mobile App (APK)</span>
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-[#0F172A] whitespace-nowrap shrink-0">
-      <Layers className="w-3.5 h-3.5 text-[#1E3A5F] shrink-0" aria-hidden="true" />
-      <span>Dual (Web + Mobile)</span>
+    <span className="inline-flex items-center gap-1.5 text-xs font-medium text-[#1E3A5F] whitespace-nowrap shrink-0">
+      <Monitor className="w-3.5 h-3.5 text-[#2563EB] shrink-0" aria-hidden="true" />
+      <span>Web Portal</span>
     </span>
   );
 }
@@ -145,11 +139,13 @@ interface CoordinatesPickerProps {
   onChange: (lat: number, lng: number, radiusMeters?: number) => void;
   label?: string;
   showRadiusControl?: boolean;
+  apiKey?: string;
+  height?: number;
 }
 
 /**
- * Shared Coordinates Picker Component (Design System Section 5):
- * Lat/Lng inputs plus interactive "Pick on map" and an always-visible map preview after save.
+ * Interactive Click-on-Map Coordinates Picker powered by MapLibre + OpenFreeMap (with optional Google Maps upgrade).
+ * Click anywhere on the map or drag the pin to set Distributor, Shop, or Geography coordinates.
  */
 export function CoordinatesPicker({
   lat,
@@ -158,24 +154,25 @@ export function CoordinatesPicker({
   onChange,
   label = 'Registered Master Coordinates',
   showRadiusControl = false,
+  apiKey = '',
+  height = 240,
 }: CoordinatesPickerProps) {
   const [locating, setLocating] = useState(false);
   const [geoMessage, setGeoMessage] = useState<string | null>(null);
 
-  const handleMapClick = (e: React.MouseEvent<SVGSVGElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const relX = (e.clientX - rect.left) / rect.width; // 0..1
-    const relY = (e.clientY - rect.top) / rect.height; // 0..1
-    // Map relative click around current region center (+/- 0.02 deg)
-    const nextLat = Number((lat + (0.5 - relY) * 0.015).toFixed(4));
-    const nextLng = Number((lng + (relX - 0.5) * 0.015).toFixed(4));
-    onChange(nextLat, nextLng, radiusMeters);
-    setGeoMessage('Pin updated on interactive coordinate grid.');
+  const safeLat = Number.isFinite(lat) ? lat : 31.5204;
+  const safeLng = Number.isFinite(lng) ? lng : 74.3587;
+
+  const handleMapPick = (nextLat: number, nextLng: number) => {
+    const rLat = Number(nextLat.toFixed(6));
+    const rLng = Number(nextLng.toFixed(6));
+    onChange(rLat, rLng, radiusMeters);
+    setGeoMessage(`Coordinates updated on map (${rLat.toFixed(5)}, ${rLng.toFixed(5)}).`);
   };
 
   const handleUseDeviceGPS = () => {
     if (!navigator.geolocation) {
-      setGeoMessage('Browser geolocation unavailable in this environment; click map grid to position pin.');
+      setGeoMessage('Browser geolocation unavailable; click anywhere on the map to set the pin.');
       return;
     }
     setLocating(true);
@@ -183,38 +180,46 @@ export function CoordinatesPicker({
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setLocating(false);
-        onChange(
-          Number(pos.coords.latitude.toFixed(4)),
-          Number(pos.coords.longitude.toFixed(4)),
-          radiusMeters
-        );
-        setGeoMessage(`Captured GPS (±${Math.round(pos.coords.accuracy)}m accuracy).`);
+        const rLat = Number(pos.coords.latitude.toFixed(6));
+        const rLng = Number(pos.coords.longitude.toFixed(6));
+        onChange(rLat, rLng, radiusMeters);
+        setGeoMessage(`Captured GPS (${rLat.toFixed(5)}, ${rLng.toFixed(5)} · ±${Math.round(pos.coords.accuracy)}m).`);
       },
       () => {
         setLocating(false);
-        setGeoMessage('GPS permission declined or unavailable; click anywhere on the map preview to set pin.');
+        setGeoMessage('GPS permission declined or unavailable; click anywhere on the map below to set pin.');
       },
-      { enableHighAccuracy: true, timeout: 5000 }
+      { enableHighAccuracy: true, timeout: 6000 }
     );
   };
-
-  // Compute deterministic pin position within the preview box
-  const offsetX = Math.max(18, Math.min(82, 50 + ((lng * 1000) % 25)));
-  const offsetY = Math.max(20, Math.min(80, 50 - ((lat * 1000) % 25)));
 
   return (
     <div className="border border-[#CBD5E1] rounded-lg p-3.5 bg-[#F8FAFC] space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <span className="text-xs font-semibold text-[#0F172A]">{label}</span>
-        <button
-          type="button"
-          onClick={handleUseDeviceGPS}
-          disabled={locating}
-          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-[#1E3A5F] bg-white border border-[#CBD5E1] rounded hover:bg-[#E9EEF5] transition-colors cursor-pointer whitespace-nowrap shrink-0"
-        >
-          <Crosshair className="w-3.5 h-3.5 text-[#2563EB]" aria-hidden="true" />
-          <span>{locating ? 'Reading GPS...' : 'Capture Current GPS'}</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          {hasCoords({ lat: safeLat, lng: safeLng }) && (
+            <a
+              href={directionsUrl(safeLat, safeLng)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-[#1E3A5F] bg-white border border-[#CBD5E1] rounded hover:bg-[#E9EEF5] transition-colors whitespace-nowrap shrink-0"
+            >
+              <Navigation className="w-3.5 h-3.5 text-[#2563EB]" aria-hidden="true" />
+              <span>Directions</span>
+              <ExternalLink className="w-3 h-3 text-[#475569]" aria-hidden="true" />
+            </a>
+          )}
+          <button
+            type="button"
+            onClick={handleUseDeviceGPS}
+            disabled={locating}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-[#1E3A5F] bg-white border border-[#CBD5E1] rounded hover:bg-[#E9EEF5] transition-colors cursor-pointer whitespace-nowrap shrink-0"
+          >
+            <Crosshair className="w-3.5 h-3.5 text-[#2563EB]" aria-hidden="true" />
+            <span>{locating ? 'Reading GPS...' : 'Capture Current GPS'}</span>
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -222,10 +227,10 @@ export function CoordinatesPicker({
           <label className="block text-xs font-medium text-[#475569] mb-1">Latitude (N)</label>
           <input
             type="number"
-            step="0.0001"
+            step="0.00001"
             inputMode="decimal"
-            value={lat}
-            onChange={(e) => onChange(parseFloat(e.target.value) || 0, lng, radiusMeters)}
+            value={safeLat}
+            onChange={(e) => onChange(parseFloat(e.target.value) || 0, safeLng, radiusMeters)}
             className="w-full px-2.5 py-1.5 text-sm font-mono tabular-nums bg-white border border-[#CBD5E1] rounded focus-ring"
           />
         </div>
@@ -233,10 +238,10 @@ export function CoordinatesPicker({
           <label className="block text-xs font-medium text-[#475569] mb-1">Longitude (E)</label>
           <input
             type="number"
-            step="0.0001"
+            step="0.00001"
             inputMode="decimal"
-            value={lng}
-            onChange={(e) => onChange(lat, parseFloat(e.target.value) || 0, radiusMeters)}
+            value={safeLng}
+            onChange={(e) => onChange(safeLat, parseFloat(e.target.value) || 0, radiusMeters)}
             className="w-full px-2.5 py-1.5 text-sm font-mono tabular-nums bg-white border border-[#CBD5E1] rounded focus-ring"
           />
         </div>
@@ -248,11 +253,11 @@ export function CoordinatesPicker({
             <input
               type="number"
               min={15}
-              max={250}
+              max={500}
               inputMode="numeric"
               value={radiusMeters}
               onChange={(e) =>
-                onChange(lat, lng, Math.max(15, parseInt(e.target.value, 10) || 50))
+                onChange(safeLat, safeLng, Math.max(15, parseInt(e.target.value, 10) || 50))
               }
               className="w-full px-2.5 py-1.5 text-sm font-mono tabular-nums bg-white border border-[#CBD5E1] rounded focus-ring"
             />
@@ -260,83 +265,42 @@ export function CoordinatesPicker({
         ) : (
           <div className="flex flex-col justify-end">
             <div className="px-2.5 py-1.5 text-xs font-mono tabular-nums bg-[#E9EEF5] text-[#475569] rounded border border-[#CBD5E1]">
-              {lat.toFixed(4)}° N, {lng.toFixed(4)}° E
+              {safeLat.toFixed(5)}° N, {safeLng.toFixed(5)}° E
             </div>
           </div>
         )}
       </div>
 
-      {/* Always-visible interactive Map Preview */}
-      <div className="relative rounded-md overflow-hidden border border-[#CBD5E1] bg-[#E9EEF5]">
-        <svg
-          viewBox="0 0 320 130"
-          onClick={handleMapClick}
-          className="w-full h-32 cursor-crosshair select-none block"
-          role="img"
-          aria-label="Interactive coordinate map picker. Click anywhere to reposition the pin."
-        >
-          {/* Swiss cartographic grid background */}
-          <rect width="320" height="130" fill="#EDF2F7" />
-          <g stroke="#CBD5E1" strokeWidth="0.75">
-            <line x1="0" y1="26" x2="320" y2="26" />
-            <line x1="0" y1="52" x2="320" y2="52" />
-            <line x1="0" y1="78" x2="320" y2="78" />
-            <line x1="0" y1="104" x2="320" y2="104" />
-            <line x1="64" y1="0" x2="64" y2="130" />
-            <line x1="128" y1="0" x2="128" y2="130" />
-            <line x1="192" y1="0" x2="192" y2="130" />
-            <line x1="256" y1="0" x2="256" y2="130" />
-          </g>
-          {/* Stylized arterial roads & blocks */}
-          <path
-            d="M 0 92 Q 110 68 210 54 T 320 28"
-            stroke="#FFFFFF"
-            strokeWidth="6"
-            fill="none"
-          />
-          <path
-            d="M 0 92 Q 110 68 210 54 T 320 28"
-            stroke="#94A3B8"
-            strokeWidth="1.2"
-            strokeDasharray="4 3"
-            fill="none"
-          />
-          <path d="M 95 0 L 145 130" stroke="#FFFFFF" strokeWidth="4" fill="none" />
-          <path d="M 225 0 L 195 130" stroke="#FFFFFF" strokeWidth="3.5" fill="none" />
+      {/* Live MapLibre + OpenFreeMap Click-on-Map Picker */}
+      <GoogleMap
+        apiKey={apiKey}
+        markers={[
+          {
+            id: 'picker-pin',
+            lat: safeLat,
+            lng: safeLng,
+            label,
+            sub: `Geofence radius: ${radiusMeters} m`,
+            kind: showRadiusControl ? 'shop' : 'distributor',
+          },
+        ]}
+        circles={[{ lat: safeLat, lng: safeLng, radius: radiusMeters, color: '#2563EB' }]}
+        onMapClick={handleMapPick}
+        defaultCenter={{ lat: safeLat, lng: safeLng }}
+        defaultZoom={15}
+        height={height}
+      />
 
-          {/* Allowed Radius Geofence Circle */}
-          <circle
-            cx={(offsetX / 100) * 320}
-            cy={(offsetY / 100) * 130}
-            r={Math.min(42, Math.max(14, radiusMeters * 0.42))}
-            fill="rgba(37, 99, 235, 0.14)"
-            stroke="#2563EB"
-            strokeWidth="1.25"
-            strokeDasharray="3 2"
-          />
-
-          {/* Registered Pin */}
-          <circle
-            cx={(offsetX / 100) * 320}
-            cy={(offsetY / 100) * 130}
-            r="6"
-            fill="#1E3A5F"
-            stroke="#FFFFFF"
-            strokeWidth="2"
-          />
-        </svg>
-        <div className="flex items-center justify-between px-2.5 py-1 bg-white/95 border-t border-[#CBD5E1] text-[11px] text-[#475569]">
-          <span className="inline-flex items-center gap-1">
-            <Navigation className="w-3 h-3 text-[#1E3A5F]" aria-hidden="true" />
-            <span>Click map to adjust pin · Geofence {radiusMeters}m</span>
-          </span>
-          <span className="font-mono tabular-nums text-[#0F172A]">
-            {lat.toFixed(4)}, {lng.toFixed(4)}
-          </span>
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-[#475569]">
+        <span>
+          Click anywhere on the OpenFreeMap view or drag the pin to position coordinates · Geofence {radiusMeters}m
+        </span>
+        <span className="font-mono tabular-nums text-[#0F172A]">
+          {safeLat.toFixed(5)}, {safeLng.toFixed(5)}
+        </span>
       </div>
 
-      {geoMessage && <p className="text-xs text-[#475569]">{geoMessage}</p>}
+      {geoMessage && <p className="text-xs font-medium text-[#1E3A5F]">{geoMessage}</p>}
     </div>
   );
 }

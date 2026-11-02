@@ -341,22 +341,43 @@ function Header({ title, sub, onBack }: { title: string; sub?: string; onBack: (
 
 function PlanMap({ plan, apiKey, me, coordsOf }: { plan: AuditPlan; apiKey: string; me: { lat: number; lng: number; accuracy?: number } | null; coordsOf: (i: PlanItem) => { lat: number; lng: number } | null }) {
   const [open, setOpen] = useState(false);
+  const [showRoute, setShowRoute] = useState(true);
   const markers = useMemo<MapMarker[]>(() => plan.items.flatMap((i) => {
     const c = coordsOf(i);
     return c ? [{ id: i.id, lat: c.lat, lng: c.lng, label: i.targetLabel, sub: `${i.formTitle} · ${i.status}`, kind: 'target' as const, dim: i.status !== 'Pending' }] : [];
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }), [plan.items]);
+  const routeWaypoints = useMemo(() => {
+    if (!showRoute) return undefined;
+    const pendingPts = plan.items
+      .filter((i) => i.status === 'Pending')
+      .flatMap((i) => {
+        const c = coordsOf(i);
+        return c ? [{ lat: c.lat, lng: c.lng }] : [];
+      });
+    const allPts = pendingPts.length > 0 ? pendingPts : markers.map((m) => ({ lat: m.lat, lng: m.lng }));
+    const pts = me ? [{ lat: me.lat, lng: me.lng }, ...allPts] : allPts;
+    return pts.length >= 2 ? pts : undefined;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showRoute, plan.items, markers, me]);
   const missing = plan.items.length - markers.length;
   return (
     <div className="space-y-2">
       <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className="w-full min-h-[48px] rounded-xl border border-[#CBD5E1] bg-white text-sm font-bold text-[#1E3A5F] flex items-center justify-center gap-2 cursor-pointer"><MapPin className="w-4 h-4" />{open ? 'Hide map' : 'Show stops on map'}</button>
       {open && (
         <>
-          <GoogleMap apiKey={apiKey} markers={markers} me={me} height={300} />
-          <MapLegend kinds={[{ kind: 'target', label: 'Stops (faded = done/skipped)' }]} />
+          <div className="flex items-center justify-between gap-2 px-1">
+            <MapLegend kinds={[{ kind: 'target', label: 'Stops (faded = done/skipped)' }]} />
+            <label className="flex items-center gap-1.5 text-xs font-semibold text-[#1E3A5F] cursor-pointer">
+              <input type="checkbox" checked={showRoute} onChange={(e) => setShowRoute(e.target.checked)} />
+              <span>In-app route line</span>
+            </label>
+          </div>
+          <GoogleMap apiKey={apiKey} markers={markers} me={me} routeWaypoints={routeWaypoints} height={300} />
           {missing > 0 && <div className="text-[11px] text-[#92400E]">{missing} stop{missing === 1 ? ' has' : 's have'} no registered location yet.</div>}
         </>
       )}
     </div>
   );
 }
+

@@ -67,15 +67,8 @@ export function InfrastructureOverview({
 }: InfrastructureOverviewProps) {
   // Core Metrics
   const mobileAuditors = users.filter((u) => u.userType === 'mobile');
-  const dualAccessUsers = users.filter(
-    (u) => u.userType === 'web' && u.canLoginFromMobile
-  );
-  const allEligibleAuditors = users.filter(
-    (u) => u.userType === 'mobile' || u.canLoginFromMobile
-  );
-  const webOnlyUsers = users.filter(
-    (u) => u.userType === 'web' && !u.canLoginFromMobile
-  );
+  const allEligibleAuditors = mobileAuditors;
+  const webOnlyUsers = users.filter((u) => u.userType === 'web');
 
   const activeDistributors = distributors.filter((d) => d.status === 'Active');
   const activeProducts = products.filter((p) => p.status === 'Active');
@@ -192,14 +185,14 @@ export function InfrastructureOverview({
           </div>
           <div>
             <div className="font-mono text-2xl font-extrabold text-[#0F172A] tabular-nums">
-              {allEligibleAuditors.length}
+              {mobileAuditors.length}
             </div>
             <div className="text-[11px] text-[#475569] mt-0.5">
-              {mobileAuditors.length} Mobile Only · {dualAccessUsers.length} Web+Mob
+              Mobile App (APK) Auditors
             </div>
           </div>
           <div className="pt-2 border-t border-[#CBD5E1] text-[11px] font-semibold text-[#1E3A5F]">
-            +{webOnlyUsers.length} Web Managers
+            {webOnlyUsers.length} Web Portal Managers
           </div>
         </div>
 

@@ -13,7 +13,6 @@ import {
   ClipboardCheck,
   Users,
   Shield,
-  Smartphone,
   PanelLeftClose,
   PanelLeftOpen,
   Menu,
@@ -55,7 +54,6 @@ import { AuditReportsPage } from './components/reports/AuditReportsPage';
 import { AnalyticsPage } from './components/analytics/AnalyticsPage';
 import { MapLivePage } from './components/maps/MapLivePage';
 import { UsersAndRolesPages } from './components/users/UsersAndRolesPages';
-import { AuditorMobilePWA } from './components/mobile/AuditorMobilePWA';
 
 /** Managers and administrators hold at least one web.* permission; field auditors hold none. */
 const hasManagementAccess = (perms?: Record<string, boolean>) =>
@@ -92,6 +90,7 @@ export default function App() {
   const [auditForms, setAuditForms] = useState<AuditFormDefinition[]>([]);
   const [formConfigs, setFormConfigs] = useState<FormConfigMap>({});
   const [mapsApiKey, setMapsApiKey] = useState('');
+  const [orsApiKey, setOrsApiKey] = useState('');
   const [auditReports, setAuditReports] = useState<DistributorProductAuditReport[]>([]);
   const [retailShopReports, setRetailShopReports] = useState<RetailMarketShopAuditReport[]>([]);
   const [selectedMobileAuditorId, setSelectedMobileAuditorId] = useState<string>('');
@@ -102,7 +101,6 @@ export default function App() {
   const [showPassword, setShowPassword] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const authenticatedUser: AppUser | null = session?.user ?? null;
-  const authenticatedSurface: 'web' | 'mobile' = session?.surface ?? 'web';
 
   // Shared Geography Cascading Filter State
   const [geoFilter, setGeoFilter] = useState<GeographyFilterState>({
@@ -131,7 +129,9 @@ export default function App() {
       hydrateGroups(boot.groups); hydrateProducts(boot.products);
       hydrateUsers(boot.users ?? [s.user]);
       hydrateRoles(boot.roles ?? (s.role ? [s.role] : []));
-      setAuditForms(boot.forms); setFormConfigs(boot.formConfigs); setMapsApiKey(boot.mapsApiKey || '');
+      const defaultAuditor = (boot.users ?? []).find((u: AppUser) => u.userType === 'mobile');
+      setSelectedMobileAuditorId(defaultAuditor?.id || s.user.id);
+      setAuditForms(boot.forms); setFormConfigs(boot.formConfigs); setMapsApiKey(boot.mapsApiKey || ''); setOrsApiKey(boot.orsApiKey || '');
       setAuditReports(dr); setRetailShopReports(rr);
     } catch (e) {
       setLoadError(e instanceof ApiError ? e.message : 'Could not load your data.');
@@ -153,13 +153,8 @@ export default function App() {
   };
 
   const landOn = (s: Session) => {
-    if (!hasManagementAccess(s.role?.permissions)) {
-      setSelectedMobileAuditorId(s.user.id);
-      setActivePage('mobile-view');
-    } else {
-      setSelectedMobileAuditorId(s.user.id);
-      setActivePage('overview');
-    }
+    setSelectedMobileAuditorId(s.user.id);
+    setActivePage('overview');
   };
 
   useEffect(() => {
@@ -302,64 +297,20 @@ export default function App() {
 
   const currentUserRole = roles.find((r) => r.id === authenticatedUser.roleId);
 
-  // Managers/administrators (any web.* permission) get the full portal on the web AND on a phone.
-  // Everyone else (field auditors) gets the audit workspace - forms + plans - on both surfaces.
   if (!hasManagementAccess(session?.role?.permissions)) {
-    const onWeb = authenticatedSurface === 'web';
-    const shell = (
-      <>
-        <AuditorMobilePWA
-          variant="fullscreen"
-          onLogout={() => void handleLogout()}
-          users={users}
-          roles={roles}
-          cities={cities}
-          territories={territories}
-          locations={locations}
-          subLocations={subLocations}
-          shops={shops}
-          setShops={setShops}
-          distributors={distributors}
-          groups={groups}
-          products={products}
-          auditForms={auditForms}
-          formConfigs={formConfigs}
-          auditReports={auditReports}
-          onAddAuditReport={handleAddAuditReport}
-          onAddRetailShopReport={handleAddRetailShopReport}
-          selectedAuditorId={authenticatedUser.id}
-          setSelectedAuditorId={setSelectedMobileAuditorId}
-          onNavigateWeb={handleNavigate}
-          onToast={triggerToast}
-          hideAuditorSelector={true}
-          mapsApiKey={mapsApiKey}
-        />
-        {toastMessage && (
-          <div
-            role="status"
-            aria-live="polite"
-            className="fixed left-1/2 -translate-x-1/2 w-[calc(100%-24px)] max-w-[736px] z-50 flex items-center gap-2.5 px-4 py-3 bg-[#1E3A5F] text-white text-sm rounded-xl shadow-lg"
-            style={{ bottom: 'calc(72px + env(safe-area-inset-bottom))' }}
-          >
-            <CheckCircle2 className="w-4 h-4 text-[#4ADE80] shrink-0" />
-            <span className="flex-1">{toastMessage}</span>
-            <button
-              onClick={() => setToastMessage(null)}
-              aria-label="Dismiss notification"
-              className="min-w-[44px] min-h-[44px] -mr-2 flex items-center justify-center text-white/80 cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        )}
-      </>
-    );
-    // On a desktop browser the audit workspace is a centred column, not a stretched phone screen.
-    return onWeb ? (
-      <div className="min-h-dvh bg-[#E2E8F0] flex justify-center">
-        <div className="w-full max-w-[760px] bg-[#F8FAFC] shadow-xl border-x border-[#CBD5E1]">{shell}</div>
+    return (
+      <div className="min-h-dvh flex flex-col items-center justify-center gap-3 bg-[#F8FAFC] p-6 text-center">
+        <p className="text-sm text-[#0F172A] max-w-sm">
+          This account does not have Web Management Portal permissions. Field auditors must sign in using the AuditGrid Android App (APK).
+        </p>
+        <button
+          onClick={() => void handleLogout()}
+          className="min-h-[44px] px-4 rounded-lg bg-[#1E3A5F] text-white text-sm font-bold cursor-pointer"
+        >
+          Back to Web Sign-In
+        </button>
       </div>
-    ) : shell;
+    );
   }
 
   const navSections: {
@@ -457,7 +408,7 @@ export default function App() {
       ],
     },
     {
-      heading: 'Users, Roles & Mobile',
+      heading: 'Users & Roles',
       items: [
         {
           id: 'users',
@@ -467,14 +418,9 @@ export default function App() {
         },
         {
           id: 'roles',
-          label: 'User Roles (Web/Mob)',
+          label: 'User Roles',
           count: roles.length,
           icon: <Shield className="w-4 h-4 shrink-0" />,
-        },
-        {
-          id: 'mobile-view',
-          label: 'Auditor Mobile View',
-          icon: <Smartphone className="w-4 h-4 shrink-0" />,
         },
       ],
     },
@@ -688,7 +634,7 @@ export default function App() {
             )}
 
             {activePage === 'map' && (
-              <MapLivePage apiKey={mapsApiKey} cities={cities} territories={territories} distributors={distributors} shops={shops} />
+              <MapLivePage apiKey={mapsApiKey} orsApiKey={orsApiKey} cities={cities} territories={territories} distributors={distributors} shops={shops} />
             )}
 
             {activePage === 'analytics' && (
@@ -697,6 +643,8 @@ export default function App() {
 
             {activePage === 'reports' && (
               <AuditReportsPage
+                apiKey={mapsApiKey}
+                orsApiKey={orsApiKey}
                 users={users}
                 cities={cities}
                 territories={territories}
@@ -781,31 +729,6 @@ export default function App() {
                 distributors={distributors}
                 groups={groups}
                 onSelectMobileAuditor={(uid) => setSelectedMobileAuditorId(uid)}
-                onToast={triggerToast}
-              />
-            )}
-
-            {activePage === 'mobile-view' && (
-              <AuditorMobilePWA
-                users={users}
-                roles={roles}
-                cities={cities}
-                territories={territories}
-                locations={locations}
-                subLocations={subLocations}
-                shops={shops}
-                setShops={setShops}
-                distributors={distributors}
-                groups={groups}
-                products={products}
-                auditForms={auditForms}
-                formConfigs={formConfigs}
-                auditReports={auditReports}
-                onAddAuditReport={handleAddAuditReport}
-                onAddRetailShopReport={handleAddRetailShopReport}
-                selectedAuditorId={selectedMobileAuditorId}
-                setSelectedAuditorId={setSelectedMobileAuditorId}
-                onNavigateWeb={handleNavigate}
                 onToast={triggerToast}
               />
             )}

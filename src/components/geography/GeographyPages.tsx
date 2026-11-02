@@ -34,6 +34,8 @@ import {
   EntityStatusIndicator,
   CoordinatesPicker,
 } from '../common/StatusBadges';
+import { GoogleMap, DirectionsButton } from '../maps/GoogleMap';
+import { directionsUrl, hasCoords } from '../../utils/maps';
 
 interface GeographyPagesProps {
   activePage: 'cities' | 'territories' | 'locations' | 'sublocations' | 'shops';
@@ -870,82 +872,48 @@ export function GeographyPages({
                 </div>
               </div>
 
-              {/* Territory Spatial Coverage Map */}
+              {/* Territory Spatial Coverage Map (MapLibre + OpenFreeMap) */}
               <div className="bg-white border border-[#CBD5E1] rounded-lg p-4 flex-1 flex flex-col justify-between">
-                <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center justify-between gap-2 mb-2">
                   <span className="text-xs font-semibold text-[#0F172A]">
                     Territory Spatial Footprint ({activeTerritory.code})
                   </span>
-                  <span className="font-mono text-xs text-[#475569] tabular-nums">
-                    {activeTerritory.lat.toFixed(4)}° N, {activeTerritory.lng.toFixed(4)}° E
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs text-[#475569] tabular-nums">
+                      {activeTerritory.lat.toFixed(4)}° N, {activeTerritory.lng.toFixed(4)}° E
+                    </span>
+                    <DirectionsButton lat={activeTerritory.lat} lng={activeTerritory.lng} label="Directions" />
+                  </div>
                 </div>
-                <div className="relative rounded border border-[#CBD5E1] bg-[#EDF2F7] overflow-hidden flex-1 min-h-[170px]">
-                  <svg
-                    viewBox="0 0 360 170"
-                    className="w-full h-full block"
-                    role="img"
-                    aria-label={`Map showing locations and shops in ${activeTerritory.code}`}
-                  >
-                    <rect width="360" height="170" fill="#EDF2F7" />
-                    <g stroke="#CBD5E1" strokeWidth="0.75">
-                      <line x1="0" y1="42" x2="360" y2="42" />
-                      <line x1="0" y1="85" x2="360" y2="85" />
-                      <line x1="0" y1="128" x2="360" y2="128" />
-                      <line x1="90" y1="0" x2="90" y2="170" />
-                      <line x1="180" y1="0" x2="180" y2="170" />
-                      <line x1="270" y1="0" x2="270" y2="170" />
-                    </g>
-                    {/* Territory Boundary Polygon */}
-                    <polygon
-                      points="45,30 305,22 325,138 65,148"
-                      fill="rgba(30, 58, 95, 0.08)"
-                      stroke="#1E3A5F"
-                      strokeWidth="1.5"
-                      strokeDasharray="5 3"
-                    />
-                    {/* Plot shops inside territory */}
-                    {territoryShops.map((sh, idx) => {
-                      const cx = 95 + ((idx * 67) % 190);
-                      const cy = 50 + ((idx * 43) % 75);
-                      const isVerified = sh.gpsStatus === 'GPS Verified';
-                      return (
-                        <g key={sh.id}>
-                          <circle
-                            cx={cx}
-                            cy={cy}
-                            r="12"
-                            fill={
-                              isVerified
-                                ? 'rgba(22, 163, 74, 0.16)'
-                                : 'rgba(180, 83, 9, 0.18)'
-                            }
-                          />
-                          <circle
-                            cx={cx}
-                            cy={cy}
-                            r="4.5"
-                            fill={isVerified ? '#16A34A' : '#B45309'}
-                            stroke="#FFFFFF"
-                            strokeWidth="1.5"
-                          />
-                          <text
-                            x={cx + 7}
-                            y={cy + 3}
-                            fontSize="9"
-                            fontFamily="Fira Code, monospace"
-                            fill="#0F172A"
-                            fontWeight="600"
-                          >
-                            {sh.code}
-                          </text>
-                        </g>
-                      );
-                    })}
-                  </svg>
+                <div className="relative rounded border border-[#CBD5E1] overflow-hidden flex-1 min-h-[210px]">
+                  <GoogleMap
+                    height={210}
+                    center={{ lat: activeTerritory.lat, lng: activeTerritory.lng }}
+                    zoom={13}
+                    markers={[
+                      {
+                        id: `ter-${activeTerritory.id}`,
+                        lat: activeTerritory.lat,
+                        lng: activeTerritory.lng,
+                        label: `${activeTerritory.distributorName} (${activeTerritory.code})`,
+                        sub: 'Territory Hub / Active Distributor',
+                        kind: 'distributor',
+                      },
+                      ...territoryShops
+                        .filter((sh) => hasCoords(sh))
+                        .map((sh) => ({
+                          id: `shp-${sh.id}`,
+                          lat: sh.lat,
+                          lng: sh.lng,
+                          label: sh.name,
+                          sub: `${sh.code} · ${sh.gpsStatus}`,
+                          kind: 'shop' as const,
+                        })),
+                    ]}
+                  />
                 </div>
                 <div className="flex items-center justify-between text-[11px] text-[#475569] mt-2">
-                  <span>Dashed perimeter: {activeTerritory.code} geofence zone</span>
+                  <span>Interactive MapLibre + OpenFreeMap</span>
                   <span>{territoryShops.length} active retail points plotted</span>
                 </div>
               </div>
@@ -2015,16 +1983,29 @@ export function GeographyPages({
                         <GPSStatusChip status={shop.gpsStatus} />
                       </td>
                       <td className="py-2.5 px-3 text-right">
-                        <button
-                          onClick={() => {
-                            setEditingShop(shop);
-                            setShopModalOpen(true);
-                          }}
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-[#1E3A5F] bg-[#F8FAFC] border border-[#CBD5E1] rounded hover:bg-[#E9EEF5] cursor-pointer whitespace-nowrap"
-                        >
-                          <Edit3 className="w-3.5 h-3.5 text-[#2563EB]" />
-                          <span>Edit & Map</span>
-                        </button>
+                        <div className="inline-flex items-center gap-1.5">
+                          {hasCoords(shop) && (
+                            <a
+                              href={directionsUrl(shop.lat, shop.lng)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 px-2 py-1 text-xs font-semibold text-[#2563EB] bg-[#EFF6FF] border border-[#2563EB]/30 rounded hover:bg-[#DBEAFE] whitespace-nowrap"
+                            >
+                              <MapPin className="w-3 h-3" />
+                              <span>Directions</span>
+                            </a>
+                          )}
+                          <button
+                            onClick={() => {
+                              setEditingShop(shop);
+                              setShopModalOpen(true);
+                            }}
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium text-[#1E3A5F] bg-[#F8FAFC] border border-[#CBD5E1] rounded hover:bg-[#E9EEF5] cursor-pointer whitespace-nowrap"
+                          >
+                            <Edit3 className="w-3.5 h-3.5 text-[#2563EB]" />
+                            <span>Edit &amp; Pick on Map</span>
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

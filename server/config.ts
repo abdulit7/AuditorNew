@@ -25,8 +25,10 @@ const EnvSchema = z.object({
   REFRESH_TTL_WEB_HOURS: z.coerce.number().int().default(12),
   REFRESH_TTL_MOBILE_DAYS: z.coerce.number().int().default(30),
 
-  /** Browser key for Google Maps JavaScript API. Public by design: restrict it by HTTP referrer in Google Cloud. */
+  /** Optional browser key for Google Maps JavaScript API upgrade (MapLibre + OpenFreeMap is used by default with no key). */
   GOOGLE_MAPS_API_KEY: z.string().default(''),
+  /** Optional API key for OpenRouteService in-app route lines (OSRM works out of the box with no key). */
+  OPENROUTESERVICE_API_KEY: z.string().default(''),
   COOKIE_SECURE: bool(false),
   CORS_ORIGINS: z.string().default(''),
   TRUST_PROXY: z.coerce.number().int().default(0),

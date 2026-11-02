@@ -1,0 +1,88 @@
+import { PermissionDefinition } from '../types/infrastructure';
+
+export const PERMISSION_DEFINITIONS: PermissionDefinition[] = [
+  {
+    key: 'web.geography.manage',
+    label: 'Manage Geography Hierarchy',
+    surface: 'Web',
+    module: 'Geography & Shops',
+    description: 'Create, edit, and deactivate cities, territories, locations, and sub-locations.',
+  },
+  {
+    key: 'web.shops.manage',
+    label: 'Manage Retail Shops & Coordinates',
+    surface: 'Web',
+    module: 'Geography & Shops',
+    description: 'Register retail shops, update GPS geofence radii, and manage verification status.',
+  },
+  {
+    key: 'web.distributor.reassign',
+    label: 'Manage & Reassign Distributors',
+    surface: 'Web',
+    module: 'Geography & Shops',
+    description: 'Create distributor setups, assign territories, and configure active SKU dealing.',
+  },
+  {
+    key: 'web.products.manage',
+    label: 'Manage Product Groups & Catalog',
+    surface: 'Web',
+    module: 'Product Catalog & Groups',
+    description: 'Create product groups (Group A / B), manage SKU master pricing, carton ratios, and Excel imports.',
+  },
+  {
+    key: 'web.users.manage',
+    label: 'Manage Users & Role Assignments',
+    surface: 'Web',
+    module: 'Users & RBAC',
+    description: 'Create web and mobile user accounts, assign territories/groups, and manage role permissions.',
+  },
+  {
+    key: 'web.forms.manage',
+    label: 'Configure Audit Forms & Fields',
+    surface: 'Web',
+    module: 'Field PWA Operations',
+    description: 'Create custom audit forms, edit form field labels/requirements, and configure photo & GPS rules.',
+  },
+  {
+    key: 'mobile.territories.view',
+    label: 'Browse Assigned Places & Shops',
+    surface: 'Mobile',
+    module: 'Field PWA Operations',
+    description: 'View assigned cities, territories, locations, sub-locations, and registered retail shops on mobile.',
+  },
+  {
+    key: 'mobile.gps.capture',
+    label: 'Capture Live Device GPS Coordinates',
+    surface: 'Mobile',
+    module: 'Field PWA Operations',
+    description: 'Acquire live device GPS fixes during field audits and verify proximity to registered locations.',
+  },
+  {
+    key: 'mobile.catalog.browse',
+    label: 'Browse Assigned Distributors & SKUs',
+    surface: 'Mobile',
+    module: 'Field PWA Operations',
+    description: 'View assigned distributor profiles, warehouse coordinates, and linked product group catalogs.',
+  },
+  {
+    key: 'mobile.audit.distributor',
+    label: 'Submit Distributor Stock Audits',
+    surface: 'Mobile',
+    module: 'Field PWA Operations',
+    description: 'Conduct and submit distributor warehouse stock audits with carton/box counts and batch dates.',
+  },
+  {
+    key: 'mobile.audit.retailer',
+    label: 'Submit Retail Market Shop Audits',
+    surface: 'Mobile',
+    module: 'Field PWA Operations',
+    description: 'Conduct and submit sub-location retail market shop audits with display ratings and photos.',
+  },
+  {
+    key: 'mobile.offline.cache',
+    label: 'Local Drafts & Offline Caching',
+    surface: 'Mobile',
+    module: 'Field PWA Operations',
+    description: 'Save in-progress audit drafts locally on the device until network connectivity is available.',
+  },
+];

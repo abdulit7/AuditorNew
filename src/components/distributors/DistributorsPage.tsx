@@ -1236,9 +1236,16 @@ export function DistributorsPage({
                   <select
                     required
                     value={editingDist.territoryId}
-                    onChange={(e) =>
-                      setEditingDist({ ...editingDist, territoryId: e.target.value })
-                    }
+                    onChange={(e) => {
+                      const nextTerId = e.target.value;
+                      const nextTer = getTerritory(nextTerId);
+                      setEditingDist({
+                        ...editingDist,
+                        territoryId: nextTerId,
+                        lat: nextTer?.lat || editingDist.lat,
+                        lng: nextTer?.lng || editingDist.lng,
+                      });
+                    }}
                     className="w-full px-3 py-2 text-sm bg-white border border-[#CBD5E1] rounded focus-ring"
                   >
                     {modalCityTerritories.length === 0 ? (
@@ -1269,6 +1276,15 @@ export function DistributorsPage({
                   />
                 </div>
               </div>
+
+              {/* Click-on-Map Picker for Distributor Warehouse Coordinates */}
+              <CoordinatesPicker
+                lat={editingDist.lat}
+                lng={editingDist.lng}
+                radiusMeters={50}
+                label="Distributor Warehouse GPS Coordinates (Click on map or drag pin)"
+                onChange={(lat, lng) => setEditingDist({ ...editingDist, lat, lng })}
+              />
 
               {/* Select Product Group(s) */}
               <div className="border border-[#CBD5E1] rounded-lg p-4 bg-[#F8FAFC] space-y-2.5">

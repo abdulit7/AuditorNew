@@ -22,6 +22,7 @@ export function bootstrapRoutes(db: Knex) {
       out[names[d.path]] = rows.map((x: any) => parseJson(x.data, {}));
     }
     out.mapsApiKey = (req.app.get('cfg') as any)?.GOOGLE_MAPS_API_KEY || '';
+    out.orsApiKey = (req.app.get('cfg') as any)?.OPENROUTESERVICE_API_KEY || '';
     out.forms = (await db('audit_forms').orderBy('code')).map((x: any) => parseJson(x.data, {}));
     const configs: Record<string, unknown> = {};
     for (const f of out.forms as any[]) {

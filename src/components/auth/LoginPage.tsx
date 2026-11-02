@@ -5,10 +5,10 @@ import {
   Eye,
   EyeOff,
   Monitor,
-  Smartphone,
   LogIn,
   AlertCircle,
   ShieldCheck,
+  Smartphone,
 } from 'lucide-react';
 import { ApiError, login, type Session } from '../../api/client';
 
@@ -17,12 +17,6 @@ interface LoginPageProps {
 }
 
 export function LoginPage({ onLogin }: LoginPageProps) {
-  // Phones open in Mobile Browser mode by default; desktops in Web Portal mode.
-  const [loginSurface, setLoginSurface] = useState<'web' | 'mobile'>(() =>
-    typeof window !== 'undefined' && window.matchMedia('(max-width: 767px)').matches
-      ? 'mobile'
-      : 'web'
-  );
   // Dev builds (with SEED_DEMO on the server) pre-fill the demo admin. Production never pre-fills credentials.
   const devPrefill = import.meta.env.DEV;
   const [username, setUsername] = useState(devPrefill ? 'abdul.rehman' : '');
@@ -37,8 +31,8 @@ export function LoginPage({ onLogin }: LoginPageProps) {
     setErrorMessage(null);
     setBusy(true);
     try {
-      // The server checks the password, account status and web/mobile sign-in rules.
-      const session = await login(username.trim(), password, loginSurface);
+      // Browser login is strictly for the Web Management Portal.
+      const session = await login(username.trim(), password, 'web');
       await onLogin(session);
     } catch (err) {
       setErrorMessage(err instanceof ApiError ? err.message : 'Could not sign in. Please try again.');
@@ -61,57 +55,19 @@ export function LoginPage({ onLogin }: LoginPageProps) {
               <div>
                 <h1 className="text-lg font-bold tracking-tight">AuditGrid</h1>
                 <p className="text-xs text-white/80">
-                  Distribution &amp; Field Stock Audit Platform
+                  Web Management Portal
                 </p>
               </div>
             </div>
-            <span className="font-mono text-[11px] bg-white/15 px-2.5 py-1 rounded">
-              v2.4
+            <span className="inline-flex items-center gap-1.5 font-mono text-[11px] bg-white/15 px-2.5 py-1 rounded">
+              <Monitor className="w-3.5 h-3.5" />
+              <span>WEB ONLY</span>
             </span>
           </div>
         </div>
 
         {/* Sign In Form */}
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
-          {/* Surface Selector: Web Portal vs Mobile Browser */}
-          <div>
-            <label className="block text-xs font-bold text-[#475569] uppercase tracking-wider mb-2">
-              Select Sign-In Mode
-            </label>
-            <div className="grid grid-cols-2 gap-2 p-1 bg-[#F1F5F9] rounded-lg border border-[#CBD5E1]">
-              <button
-                type="button"
-                onClick={() => {
-                  setLoginSurface('web');
-                  setErrorMessage(null);
-                }}
-                className={`min-h-[44px] py-2 px-3 rounded-md text-xs font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer ${
-                  loginSurface === 'web'
-                    ? 'bg-[#1E3A5F] text-white shadow-2xs'
-                    : 'text-[#475569] hover:text-[#0F172A]'
-                }`}
-              >
-                <Monitor className="w-4 h-4" />
-                <span>Web Portal</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setLoginSurface('mobile');
-                  setErrorMessage(null);
-                }}
-                className={`min-h-[44px] py-2 px-3 rounded-md text-xs font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer ${
-                  loginSurface === 'mobile'
-                    ? 'bg-[#1E3A5F] text-white shadow-2xs'
-                    : 'text-[#475569] hover:text-[#0F172A]'
-                }`}
-              >
-                <Smartphone className="w-4 h-4" />
-                <span>Mobile Browser</span>
-              </button>
-            </div>
-          </div>
-
           {errorMessage && (
             <div className="p-3 rounded-lg bg-[#FEE2E2] border border-[#DC2626] text-xs text-[#991B1B] flex items-start gap-2">
               <AlertCircle className="w-4 h-4 text-[#DC2626] shrink-0 mt-0.5" />
@@ -136,7 +92,7 @@ export function LoginPage({ onLogin }: LoginPageProps) {
                 autoComplete="username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="Enter username"
+                placeholder="Enter web portal username"
                 className="w-full min-h-[44px] pl-9 pr-3 py-2.5 text-base sm:text-sm font-mono bg-[#F8FAFC] border border-[#CBD5E1] rounded-lg text-[#0F172A] focus-ring"
               />
             </div>
@@ -184,11 +140,17 @@ export function LoginPage({ onLogin }: LoginPageProps) {
           >
             <LogIn className="w-4 h-4" />
             <span>
-              {busy ? 'Signing in…' : `Sign In to ${loginSurface === 'web' ? 'Web Portal' : 'Mobile View'}`}
+              {busy ? 'Signing in…' : 'Sign In to Web Portal'}
             </span>
           </button>
-        </form>
 
+          <div className="pt-3 border-t border-[#E2E8F0] flex items-center gap-2 text-xs text-[#475569]">
+            <Smartphone className="w-4 h-4 text-[#1E3A5F] shrink-0" />
+            <span>
+              Field auditors must sign in using the dedicated <strong>AuditGrid Android App (APK)</strong>.
+            </span>
+          </div>
+        </form>
       </div>
     </div>
   );
