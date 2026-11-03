@@ -25,7 +25,7 @@ export async function seedIfEmpty(db: Knex, cfg: AppConfig, log: (m: string) => 
   if (await empty('roles')) {
     for (const r of INITIAL_ROLES) {
       await db('roles').insert({
-        id: r.id, code: r.code, name: r.name, surface: r.surface, description: r.description,
+        id: r.id, code: r.code, name: r.name, surface: r.surface, role_type: r.roleType, description: r.description,
         is_system: r.isSystemRole, permissions: toJson(r.permissions), updated_at: now,
       });
     }

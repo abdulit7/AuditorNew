@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import { pathToFileURL } from 'node:url';
 import { createApp } from './app';
 import { loadConfig } from './config';
 import { createDb } from './db';
@@ -38,7 +39,12 @@ export async function startServer() {
       try {
         await db.raw('SELECT 1');
       } catch (err: any) {
-        console.warn(`[db] MySQL unavailable (${err?.code || err?.message}); falling back to SQLite (${cfg.SQLITE_FILE}).`);
+        if (cfg.isProd) {
+          // Never fall back to a throwaway SQLite file in production: data would silently split from the real database.
+          console.error(`[db] MySQL unavailable (${err?.code || err?.message}). Refusing to start in production.`);
+          process.exit(1);
+        }
+        console.warn(`[db] MySQL unavailable (${err?.code || err?.message}); development fallback to SQLite (${cfg.SQLITE_FILE}).`);
         await db.destroy().catch(() => {});
         cfg = loadConfig({ ...envInput, DB_CLIENT: 'better-sqlite3' });
         db = createDb(cfg);
@@ -69,9 +75,11 @@ export async function startServer() {
     }
   });
 
-  const server = rootApp.listen(cfg.PORT, cfg.HOST, () =>
-    console.log(`AuditGrid listening on http://${cfg.HOST}:${cfg.PORT} (${cfg.NODE_ENV}, ${cfg.DB_CLIENT})`)
-  );
+  const server = rootApp.listen(cfg.PORT, cfg.HOST);
+  server.on('listening', () => {
+    // Printed after the database is chosen, so the banner shows the real engine.
+    void initPromise.then(() => console.log(`AuditGrid listening on http://${cfg.HOST}:${cfg.PORT} (${cfg.NODE_ENV}, ${cfg.DB_CLIENT})`));
+  });
   const stop = () => server.close(() => db.destroy().then(() => process.exit(0)));
   process.on('SIGTERM', stop);
   process.on('SIGINT', stop);
@@ -79,7 +87,8 @@ export async function startServer() {
   return server;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// pathToFileURL makes the entry-file check work on Windows too (file:///C:/...).
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   startServer().catch((e) => {
     console.error(e);
     process.exit(1);

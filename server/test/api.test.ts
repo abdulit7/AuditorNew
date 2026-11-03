@@ -11,11 +11,11 @@ const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR
 
 let app: any;
 const login = (username: string, password: string, surface: 'web' | 'mobile') =>
-  request(app).post('/api/auth/login').send({ username, password, surface });
+  request(app).post('/api/auth/login').send({ username, password, surface, ...(surface === 'mobile' ? { client: 'native' } : {}) });
 
 async function agentFor(u: string, p: string, surface: 'web' | 'mobile') {
   const ag = request.agent(app);
-  const r = await ag.post('/api/auth/login').send({ username: u, password: p, surface });
+  const r = await ag.post('/api/auth/login').send({ username: u, password: p, surface, ...(surface === 'mobile' ? { client: 'native' } : {}) });
   expect(r.status).toBe(200);
   return { ag, token: r.body.accessToken as string, auth: (t = r.body.accessToken) => ({ Authorization: `Bearer ${t}` }) };
 }
@@ -40,6 +40,15 @@ describe('authentication', () => {
     expect((await login('abdul.rehman', 'Admin@2026', 'mobile')).status).toBe(403); // web admin rejected on mobile APK
     expect((await login('abdul.rehman', 'Admin@2026', 'web')).status).toBe(200); // web admin allowed on web
     expect((await login('bilal.cheema', 'Aud@103', 'mobile')).status).toBe(200); // mobile auditor allowed on mobile APK
+  });
+
+  it('keeps auditors and the mobile surface out of the browser', async () => {
+    const browser = (u: string, p: string, surface: 'web' | 'mobile') => request(app).post('/api/auth/login').send({ username: u, password: p, surface });
+    expect((await browser('bilal.cheema', 'Aud@103', 'mobile')).status).toBe(403); // a browser cannot use the mobile surface
+    const a = await browser('bilal.cheema', 'Aud@103', 'web');
+    expect(a.status).toBe(403);
+    expect((await browser('abdul.rehman', 'Admin@2026', 'mobile')).status).toBe(403);
+    expect((await browser('abdul.rehman', 'Admin@2026', 'web')).status).toBe(200);
   });
 
   it('gives identical errors for wrong user and wrong password', async () => {

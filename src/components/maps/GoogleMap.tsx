@@ -131,7 +131,7 @@ export interface MapProps {
   /** Routing engine for in-app route lines: 'osrm' (default, no key) or 'ors' (OpenRouteService) */
   routeEngine?: RouteEngine;
   /** Optional OpenRouteService API key */
-  orsApiKey?: string;
+  orsEnabled?: boolean;
   onRouteCalculated?: (route: DrivingRouteResult | null) => void;
   onRouteLoaded?: (route: DrivingRouteResult | null) => void;
   focusId?: string | null;
@@ -230,7 +230,7 @@ export function GoogleMap({
   route = null,
   routeWaypoints = null,
   routeEngine = 'osrm',
-  orsApiKey = '',
+  orsEnabled = false,
   onRouteCalculated,
   onRouteLoaded,
   focusId = null,
@@ -298,7 +298,7 @@ export function GoogleMap({
     setRouteLoading(true);
     fetchDrivingRoute(parsedWaypoints, {
       engine: routeEngine,
-      orsApiKey,
+      orsEnabled,
       signal: ctrl.signal,
     })
       .then((res) => {
@@ -316,7 +316,7 @@ export function GoogleMap({
         }
       });
     return () => ctrl.abort();
-  }, [waypointsKey, routeEngine, orsApiKey]);
+  }, [waypointsKey, routeEngine, orsEnabled]);
 
   const combinedPaths = useMemo<MapPath[]>(() => {
     if (!routeResult || routeResult.points.length < 2) return paths;
@@ -348,6 +348,7 @@ export function GoogleMap({
           circles={circles}
           paths={combinedPaths}
           tileStyleMode={tileStyleMode}
+          onStyleFailed={() => setTileStyleMode('osm')}
           focusId={focusId}
           onMarkerClick={onMarkerClick}
           onMapClick={onMapClick}
@@ -440,6 +441,7 @@ function MapLibreCanvas({
   circles,
   paths,
   tileStyleMode,
+  onStyleFailed,
   focusId,
   onMarkerClick,
   onMapClick,
@@ -453,6 +455,8 @@ function MapLibreCanvas({
   circles: MapCircle[];
   paths: MapPath[];
   tileStyleMode: 'openfreemap' | 'osm';
+  /** Called once when the OpenFreeMap style cannot be loaded, so the parent can switch to the OpenStreetMap raster style. */
+  onStyleFailed?: () => void;
   focusId: string | null;
   onMarkerClick?: (m: MapMarker) => void;
   onMapClick?: (lat: number, lng: number) => void;
@@ -466,6 +470,8 @@ function MapLibreCanvas({
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markerObjsRef = useRef<maplibregl.Marker[]>([]);
   const [styleVersion, setStyleVersion] = useState(0);
+  const onStyleFailedRef = useRef(onStyleFailed);
+  onStyleFailedRef.current = onStyleFailed;
   const hasFitBoundsRef = useRef<string>('');
   const lastClickedCoordsRef = useRef<string>('');
 
@@ -543,6 +549,18 @@ function MapLibreCanvas({
     };
 
     map.on('load', markStyleReady);
+
+    // If the OpenFreeMap style cannot be fetched (service down, blocked network), fall back to OpenStreetMap tiles
+    // instead of leaving a blank map.
+    let styleFailureHandled = false;
+    map.on('error', (e: any) => {
+      if (styleFailureHandled || map.isStyleLoaded()) return;
+      const url = String(e?.error?.url || '');
+      if (url.includes('openfreemap.org') || !url) {
+        styleFailureHandled = true;
+        onStyleFailedRef.current?.();
+      }
+    });
 
     map.on('click', (e: any) => {
       if (!onMapClickRef.current) return;

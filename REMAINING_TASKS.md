@@ -36,3 +36,7 @@ Real GPS only; no prefilled audit data (distributor + retail); unique report cod
 - Offline outbox for custom submissions and plans.
 - Per-form auditor restrictions (currently every auditor may use every form).
 - Dedicated permission key for custom audits (currently reuses mobile.audit.*).
+
+- [ ] Smoke-test MySQL, the Docker image and the APK on a real host; check real OpenFreeMap tiles and the production CSP with a real network.
+- [ ] Self-host PMTiles (Pakistan) for heavy production map use.
+- [ ] Optional: a dedicated permission key for editing forms vs. building them; per-form auditor restrictions.

@@ -30,6 +30,7 @@ export function roleRowToPublic(row: any) {
     code: row.code,
     name: row.name,
     surface: row.surface,
+    roleType: row.role_type ?? 'manager',
     description: row.description,
     isSystemRole: !!row.is_system,
     permissions: parseJson<Record<string, boolean>>(row.permissions, {}),

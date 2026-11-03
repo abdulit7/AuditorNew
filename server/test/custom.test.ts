@@ -8,7 +8,7 @@ import { seedIfEmpty } from '../seed';
 
 let app: any;
 async function tok(u: string, p: string, surface: 'web' | 'mobile') {
-  const r = await request(app).post('/api/auth/login').send({ username: u, password: p, surface });
+  const r = await request(app).post('/api/auth/login').send({ username: u, password: p, surface, ...(surface === 'mobile' ? { client: 'native' } : {}) });
   expect(r.status).toBe(200);
   return { Authorization: `Bearer ${r.body.accessToken}` };
 }
@@ -128,7 +128,7 @@ describe('custom forms, submissions, plans and analytics', () => {
 });
 
 describe('surface access (strict Web Portal vs Mobile APK split)', () => {
-  const login = (u: string, p: string, surface: 'web' | 'mobile') => request(app).post('/api/auth/login').send({ username: u, password: p, surface });
+  const login = (u: string, p: string, surface: 'web' | 'mobile') => request(app).post('/api/auth/login').send({ username: u, password: p, surface, ...(surface === 'mobile' ? { client: 'native' } : {}) });
 
   it('keeps strict separation: auditors on mobile APK only, managers/admins on Web Portal only', async () => {
     expect((await login('bilal.cheema', 'Aud@103', 'web')).status).toBe(403);
@@ -199,5 +199,95 @@ describe('native (Android test app) sessions', () => {
     expect((await request(app).post('/api/auth/refresh').send({ client: 'native' })).status).toBe(401);
     await request(app).post('/api/auth/logout').send({ client: 'native', refreshToken: r1.body.refreshToken });
     expect((await request(app).post('/api/auth/refresh').send({ client: 'native', refreshToken: r1.body.refreshToken })).status).toBe(401);
+  });
+});
+
+describe('three role types', () => {
+  const role = (over: any = {}) => ({ code: 'ROL-T' + Math.random().toString(36).slice(2, 7).toUpperCase(), name: 'T', description: '', permissions: {}, ...over });
+  it('admin gets every permission, auditor never gets web permissions, manager cannot hold them all', async () => {
+    const adm = await tok('abdul.rehman', 'Admin@2026', 'web');
+    const a = await request(app).post('/api/roles').set(adm).send(role({ roleType: 'admin' }));
+    expect(a.status).toBe(201);
+    expect(Object.values(a.body.permissions).every((v) => v === true)).toBe(true);
+    expect(a.body.surface).toBe('Web Dashboard');
+    const au = await request(app).post('/api/roles').set(adm).send(role({ roleType: 'auditor', permissions: { 'web.users.manage': true, 'mobile.audit.retailer': true } }));
+    expect(au.status).toBe(201);
+    expect(au.body.permissions['web.users.manage']).toBe(false);
+    expect(au.body.permissions['mobile.audit.retailer']).toBe(true);
+    expect(au.body.surface).toBe('Mobile PWA');
+    const web = ['web.geography.manage', 'web.shops.manage', 'web.distributor.reassign', 'web.products.manage', 'web.users.manage', 'web.forms.manage'];
+    const allWeb = Object.fromEntries(web.map((k) => [k, true]));
+    expect((await request(app).post('/api/roles').set(adm).send(role({ roleType: 'manager', permissions: allWeb }))).status).toBe(400);
+    expect((await request(app).post('/api/roles').set(adm).send(role({ roleType: 'manager', permissions: {} }))).status).toBe(400);
+    expect((await request(app).post('/api/roles').set(adm).send(role({ roleType: 'manager', permissions: { 'web.shops.manage': true } }))).status).toBe(201);
+  });
+
+  it('keeps users and roles consistent: auditors on auditor roles, web users on admin/manager roles', async () => {
+    const adm = await tok('abdul.rehman', 'Admin@2026', 'web');
+    const roles = (await request(app).get('/api/roles').set(adm)).body as any[];
+    expect(roles.find((r) => r.id === 'role-admin').roleType).toBe('admin');
+    expect(roles.find((r) => r.id === 'role-regional-manager').roleType).toBe('manager');
+    expect(roles.find((r) => r.id === 'role-distributor-auditor').roleType).toBe('auditor');
+    const users = (await request(app).get('/api/users').set(adm)).body as any[];
+    const bil = users.find((u) => u.username === 'bilal.cheema');
+    const bad = await request(app).put(`/api/users/${bil.id}`).set(adm).send({ ...bil, password: '', roleId: 'role-regional-manager' });
+    expect(bad.status).toBe(403);
+    const far = users.find((u) => u.username === 'farhan.bokhari');
+    expect((await request(app).put(`/api/users/${far.id}`).set(adm).send({ ...far, password: '', roleId: 'role-distributor-auditor' })).status).toBe(403);
+    // system role type cannot change; a role with members cannot change type
+    const sys = roles.find((r) => r.id === 'role-distributor-auditor');
+    expect((await request(app).put('/api/roles/role-distributor-auditor').set(adm).send({ ...sys, roleType: 'manager' })).status).toBe(409);
+  });
+});
+
+describe('editing forms', () => {
+  it('a form nobody answered is fully editable; after the first audit saved questions are protected; forms can be duplicated', async () => {
+    const adm = await tok('abdul.rehman', 'Admin@2026', 'web');
+    const aud = await tok('bilal.cheema', 'Aud@103', 'mobile');
+    const created = await request(app).post('/api/forms').set(adm).send({ ...formBody, title: 'Edit me please', shortTitle: 'Edit me' });
+    expect(created.status).toBe(201);
+    const id = created.body.form?.id ?? created.body.id;
+    const cfg = (fields: any[]) => request(app).put(`/api/forms/${id}/config`).set(adm).send({ settings: formBody.settings, fields });
+    const meta = (extra: any = {}) => request(app).put(`/api/forms/${id}`).set(adm).send({ title: 'Edit me please', shortTitle: 'Edit me', description: '', status: 'Active', ...extra });
+    const count = async () => (await request(app).get('/api/forms').set(adm)).body.find((f: any) => f.id === id).submissionCount;
+
+    // free editing: remove a question, change an answer type, change what the form audits
+    expect(await count()).toBe(0);
+    const free = await cfg([
+      { key: 'temp', label: 'Temperature (C)', type: 'number', required: true, visible: true, min: -30, max: 30 },
+      { key: 'clean', label: 'Clean?', type: 'text', required: false, visible: true, placeholder: 'Describe' },
+    ]);
+    expect(free.status).toBe(200);
+    expect(free.body.fields.length).toBe(2);
+    expect((await meta({ target: 'shop' })).body.target).toBe('shop');
+    expect((await meta({ target: 'distributor' })).body.target).toBe('distributor');
+
+    // duplicate: a switched-off copy with the same questions; built-in forms cannot be duplicated
+    const dup = await request(app).post(`/api/forms/${id}/duplicate`).set(adm);
+    expect(dup.status).toBe(201);
+    expect(dup.body.form.status).toBe('Inactive');
+    expect(dup.body.form.title).toMatch(/^Copy of /);
+    expect(dup.body.config.fields.length).toBe(2);
+    expect((await request(app).post('/api/forms/form-distributor-product-audit/duplicate').set(adm)).status).toBe(400);
+    expect((await request(app).post(`/api/forms/${id}/duplicate`).set(aud)).status).toBe(403);
+
+    // first audit arrives -> saved questions are protected
+    const d = (await request(app).get('/api/bootstrap').set(aud)).body.distributors[0];
+    const sub = await request(app).post('/api/submissions').set(aud).send({
+      clientRequestId: 'edit-req-0001', formId: id, targetType: 'distributor', targetId: d.id, mobileLat: d.lat, mobileLng: d.lng, mobileAccuracyMeters: 10, answers: { temp: 4 },
+    });
+    expect(sub.status).toBe(201);
+    expect(await count()).toBe(1);
+    expect((await cfg([{ key: 'temp', label: 'Temperature (C)', type: 'number', required: true, visible: true }])).status).toBe(409); // removed 'clean'
+    expect((await cfg([
+      { key: 'temp', label: 'Temperature (C)', type: 'text', required: true, visible: true },
+      { key: 'clean', label: 'Clean?', type: 'text', required: false, visible: true },
+    ])).status).toBe(409); // type change
+    const ok = await cfg([
+      { key: 'temp', label: 'Fridge temp (C)', type: 'number', required: true, visible: true },
+      { key: 'clean', label: 'Clean?', type: 'text', required: false, visible: false }, // hidden, renamed ones are fine
+    ]);
+    expect(ok.status).toBe(200);
+    expect((await meta({ target: 'shop' })).status).toBe(409);
   });
 });

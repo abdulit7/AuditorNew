@@ -40,6 +40,17 @@ export function authRoutes(db: Knex, cfg: AppConfig) {
     return surface === 'web' ? u.user_type === 'web' : u.user_type === 'mobile';
   };
 
+  /**
+   * The browser app is the management portal only: it needs at least one web.* permission (administrators / managers).
+   * Field auditors sign in with the AuditGrid mobile app (native client, mobile surface) - never in a browser.
+   */
+  const hasManagementAccess = async (u: any) => {
+    const role = await db('roles').where({ id: u.role_id }).first();
+    const perms = parseJson<Record<string, boolean>>(role?.permissions, {});
+    return Object.entries(perms).some(([k, v]) => k.startsWith('web.') && !!v);
+  };
+  const BROWSER_NOT_FOR_AUDITORS = 'Field auditors sign in with the AuditGrid mobile app, not in a browser. Ask your administrator for the app.';
+
   /** Native (Android test app) clients cannot use the SameSite cookie across origins: they hold the rotating refresh token themselves. */
   const isNative = (req: any) => req.body?.client === 'native';
   const nativeToken = (req: any): string | undefined =>
@@ -72,6 +83,7 @@ export function authRoutes(db: Knex, cfg: AppConfig) {
     if (!parsed.success) return res.status(400).json({ error: 'Enter your username and password.' });
     const { username, password, surface, client } = parsed.data;
     if (client === 'native' && surface !== 'mobile') return res.status(400).json({ error: 'The mobile app signs in on the mobile surface only.' });
+    if (client === 'web' && surface === 'mobile') return res.status(403).json({ error: 'Mobile sign-in is available in the AuditGrid mobile app only. Managers sign in here with the Web Portal.' });
     const generic = { error: 'Invalid username or password.' };
 
     const u = await db('users').whereRaw('LOWER(username) = ?', [username.toLowerCase()]).first();
@@ -99,6 +111,10 @@ export function authRoutes(db: Knex, cfg: AppConfig) {
     if (u.status !== 'Active') {
       await logActivity(db, req, 'login.denied', 'user', u.id, { reason: 'inactive' }, u.id);
       return res.status(403).json({ error: 'This account is inactive. Contact your administrator.' });
+    }
+    if (client === 'web' && !(await hasManagementAccess(u))) {
+      await logActivity(db, req, 'login.denied', 'user', u.id, { reason: 'auditor_in_browser' }, u.id);
+      return res.status(403).json({ error: BROWSER_NOT_FOR_AUDITORS });
     }
     if (!(await surfaceAllowed(u, surface))) {
       await logActivity(db, req, 'login.denied', 'user', u.id, { reason: 'surface', surface }, u.id);
@@ -155,7 +171,8 @@ export function authRoutes(db: Knex, cfg: AppConfig) {
       return res.status(401).json({ error: 'Session expired. Please sign in again.' });
     }
     const u = await db('users').where({ id: s.user_id }).first();
-    if (!u || u.status !== 'Active' || !(await surfaceAllowed(u, s.surface))) {
+    const browserOk = !u ? false : native || (s.surface === 'web' && (await hasManagementAccess(u)));
+    if (!u || u.status !== 'Active' || !browserOk || !(await surfaceAllowed(u, s.surface))) {
       await db('sessions').where({ id: s.id }).update({ revoked_at: sqlTime(), revoked_reason: 'user_disabled' });
       clearCookie(res);
       return res.status(401).json({ error: 'Session expired. Please sign in again.' });

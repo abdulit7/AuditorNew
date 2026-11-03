@@ -565,6 +565,7 @@ export const INITIAL_ROLES: UserRole[] = [
     code: 'ROL-ADM',
     name: 'System Administrator',
     surface: 'Web Dashboard',
+    roleType: 'admin',
     description: 'Full access to all geography hierarchies, product catalogs, users/roles, form configurations, and audit analytics.',
     isSystemRole: true,
     permissions: {
@@ -587,6 +588,7 @@ export const INITIAL_ROLES: UserRole[] = [
     code: 'ROL-MGR',
     name: 'Regional Operations Manager',
     surface: 'Web Dashboard',
+    roleType: 'manager',
     description: 'Manages assigned regional territories, distributors, retail shops, and field auditors on the Web Portal.',
     isSystemRole: true,
     permissions: {
@@ -609,6 +611,7 @@ export const INITIAL_ROLES: UserRole[] = [
     code: 'ROL-AUD-DST',
     name: 'Distributor Stock Auditor',
     surface: 'Mobile PWA',
+    roleType: 'auditor',
     description: 'Field auditor conducting distributor warehouse stock audits and retail market checks in assigned territories.',
     isSystemRole: true,
     permissions: {
@@ -631,6 +634,7 @@ export const INITIAL_ROLES: UserRole[] = [
     code: 'ROL-AUD-RET',
     name: 'Retail Market Shop Auditor',
     surface: 'Mobile PWA',
+    roleType: 'auditor',
     description: 'Field auditor conducting sub-location retail shop audits and distributor checks in assigned territories.',
     isSystemRole: true,
     permissions: {

@@ -6,13 +6,13 @@ Instructions for any Claude session continuing this project. Read this first, th
 AuditGrid: distributor stock audit + retail shop audit platform for Pakistan field operations.
 Two surfaces from one codebase:
 - **Web Portal** (Windows desktop): administrators/managers manage geography, distributors, products, users/roles, audit forms and reports.
-- **Mobile Browser** (auditors): field audits with GPS, quantities, photos.
+- **Mobile app / Android APK** (auditors): field audits with GPS, quantities, photos, plans. The browser app is management-only (no mobile-browser sign-in); it stays responsive so managers can use it on a phone browser.
 
 Origin: generated with Google AI Studio. It now has a real backend: Express + Knex (MySQL 8 in production, SQLite for tests/dev), JWT sessions, server-side RBAC/territory scoping, server-driven audit forms. See `DEPLOY.md`.
 
 ## Golden rules (from the owner)
 1. **Do not rebuild from scratch or remove working features.** Continue and complete the existing app.
-2. Preserve existing login behaviour (Web vs Mobile sign-in modes, `userType` 'mobile' | 'web', `canLoginFromMobile`), roles, business logic and the existing report data shapes in `src/types/infrastructure.ts`.
+2. Preserve login behaviour (`userType` 'mobile' | 'web'; browser = web surface for managers/admins, mobile surface = the app only), roles, business logic and the existing report data shapes in `src/types/infrastructure.ts`.
 3. Highest priority: two separately optimized experiences — mobile-first auditor UI and desktop management dashboard.
 4. Test BOTH mobile (390×844) and desktop (1440×900) after every major change (see Testing).
 5. Keep `CLAUDE.md`, `PROJECT_STATUS.md`, `REMAINING_TASKS.md` current at the end of each work block.
@@ -41,7 +41,7 @@ npm run build          # vite build    (must stay passing)
 ## Architecture (src/)
 - `App.tsx` — owns session + all collections (loaded from `/api/bootstrap`; each master collection persists via `useCollection`). Handles login, shell (sidebar/top bar), toast, and routing via `activePage` (no router lib).
 - `types/infrastructure.ts` — every domain type. Hierarchy: City → Territory → Location → Sub-location → Shop; Distributor linked to Territory; ProductGroup (A/B) → Product.
-- `components/auth/LoginPage.tsx` — Web Portal / Mobile Browser sign-in toggle.
+- `components/auth/LoginPage.tsx` — Web Portal sign-in only (no surface toggle).
 - `components/overview/` dashboard; `geography/` (cities…shops CRUD, one 2.2k-line file); `distributors/`; `products/` (+Excel import modal); `users/` (users + roles/permissions); `forms/` (audit forms page + the two mobile audit forms); `reports/`; `mobile/AuditorMobilePWA.tsx` (auditor shell); `common/StatusBadges.tsx` (badges, formatPKR, map/coordinate picker).
 - Auditor scoping: an auditor sees only `assignedTerritoryIds` / `assignedCityIds` (done in `AuditorMobilePWA`).
 - Drafts of in-progress audits persist in `localStorage` (distributor + retail forms).
@@ -50,8 +50,9 @@ npm run build          # vite build    (must stay passing)
 - Total CTNs = qtyInCtn + qtyInBox / boxesPerCtn; Stock value = (qtyInCtn × boxesPerCtn + qtyInBox) × pricePerBoxRs. Keep full precision; round only for display.
 - Product master fields (boxes/CTN, unit/box, price) are locked on the audit form; auditor enters qty, dispatch date, stacking, remarks. Same product may have multiple entries.
 - GPS compared to registered coordinates with Haversine (`calculateDistanceMeters`); mismatch flags for review, never auto-proves misconduct.
-- Sign-in surfaces: by default web users sign in on Web and mobile users on Mobile. An administrator can open the other surface per user (`canLoginFromMobile` for web users, `canLoginFromWeb` for mobile users) or per role (role surface `Dual (Web + Mobile)`, or the matching surface). Enforced in `server/routes/auth.ts` (`surfaceAllowed`), at login and at every refresh.
-- What a user sees depends on permissions, not on the surface: any `web.*` permission (managers/admins) = the full portal on desktop AND phone; no `web.*` permission (field auditors) = audit workspace (forms + plans + account) on both, with Places/Distributors tabs controlled by `mobile.territories.view` / `mobile.catalog.browse`. Server RBAC and territory scoping apply regardless.
+- Sign-in: strict split. Web users (`user_type 'web'`) sign in on the Web Portal in a browser and need a `web.*` permission; mobile users (auditors) sign in on the mobile surface with `client:'native'` only. A browser asking for the mobile surface, or an auditor in a browser, is refused (`server/routes/auth.ts`: `surfaceAllowed`, `hasManagementAccess`), at login and at every refresh. Nothing can fully prove a request comes from the APK; the rule keeps browsers out.
+- Three role types (`roles.role_type`, `server/access.ts` `normalizeRole`): **admin** (every permission, always global, web), **manager** (web, chosen subset - never all web permissions), **auditor** (mobile app only, never a web permission). A role with users or a system role cannot change type. Auditor roles go to mobile users, admin/manager roles to web users (enforced in `routes/users.ts`).
+- The web app shows the full portal to managers on desktop AND phone. The auditor workspace lives in the app. Server RBAC and territory scoping apply regardless.
 
 ## Testing (both surfaces, every major change)
 1. `npm run lint && npm run build`.
@@ -61,17 +62,20 @@ npm run build          # vite build    (must stay passing)
 ## Known constraints
 - The sandbox cannot reach external tile servers, Prisma binaries, or run MySQL/Docker daemon; tests use SQLite. The MySQL path (compose) must be smoke-tested on a real host.
 - Do not commit `.env*` (only `.env.example`).
-- Work on branch `claude/audit-and-mobile-desktop-split`; do not push to `main` without the owner's say-so.
+- This repo is `abdulit7/AuditorNew` (branch `master`) and is the one to keep. Do not commit `package-lock.json` removals (Docker needs it) or AI Studio working files (`.aistudio/`, `public/assets/aistudio/` are git-ignored).
 
 ## Custom forms, plans, analytics (added)
 - **Custom forms**: managers (`web.forms.manage`) build forms in Audit Forms → "New form" (`CustomFormBuilder`). Target type is `distributor` | `subLocation` | `shop`. Definition lives in `form_configs.config`, metadata in `audit_forms.data` (`kind:'custom'`). Every auditor can use every active form; scope is by territory only. Submissions go to `audit_submissions` via `POST /api/submissions` (server validates answers, recomputes GPS). Codes `AUD-CUS-YYYY-NNNNN`. Forms with submissions cannot be deleted, only turned off; saved question keys are immutable.
 - **Plans** (`server/routes/plans.ts`, `MobilePlans.tsx`): auditor picks date → form(s) → targets (distributor / area with optional shop subset / shop) → saves; "Start plan" shows a checklist; each item opens its form pre-targeted and the submit carries `planId`/`planItemId` so the item completes automatically. Skipping needs a reason.
 - **Analytics & Review** (`routes/analytics.ts`, `components/analytics/`): `GET /api/analytics/summary` (managers only, territory-scoped) feeds KPIs, charts, auditor performance, stock, retail, per-field stats of custom forms, plan compliance, GPS exceptions, Excel export. Review queue approves/rejects/flags distributor, retail and custom audits (note required to reject/flag).
-- Tests: `server/test/custom.test.ts` (28 API tests total).
+- **Editing forms**: a form with no submissions is fully editable (add/remove/retype questions, change what it audits). After the first audit (`submissionCount` > 0) saved questions keep key + answer type and cannot be removed (hide them with `visible:false`); the audit target is fixed. Custom forms can be duplicated (copy is switched off). Built-in forms: labels, help text, required/visible, options, settings only. Enforced in `server/routes/forms.ts`.
+- Tests: `server/test/api.test.ts` + `server/test/custom.test.ts` (36 API tests).
 
 ## Maps and live location (added)
-- `GOOGLE_MAPS_API_KEY` (server env) reaches the client through `/api/bootstrap` (`mapsApiKey`); `components/maps/GoogleMap.tsx` loads Google Maps and falls back to a list with Google Maps "Directions" links when there is no key. Manager page: `maps/MapLivePage.tsx` (nav "Map & Live Locations"). Review queue shows a registered-vs-actual location map. Mobile: plan map + Directions buttons.
-- Tracking (`server/routes/tracking.ts`, `hooks/useLiveSharing.ts`): `POST /api/tracking/ping` is accepted ONLY while the auditor has a plan In Progress (server-enforced); `GET /api/tracking/live` and `/trail` are manager-only and territory-scoped. Never track the manager's preview frame (only `variant==='fullscreen'`). Tests: `server/test/custom.test.ts` (31 total).
+- Default map: **MapLibre GL + OpenFreeMap** (no key). If the OpenFreeMap style fails to load the map falls back to OpenStreetMap raster tiles automatically (`components/maps/GoogleMap.tsx`, `MapLibreCanvas`). The public OSM tile server is for light use only: for heavy production use self-host PMTiles or a tile provider. Google Maps is an optional upgrade when `GOOGLE_MAPS_API_KEY` is set. Click-on-map coordinate picker via `onMapClick`.
+- Route lines go through our own `POST /api/routing/route` (`server/routes/routing.ts`): OSRM by default, OpenRouteService when `OPENROUTESERVICE_API_KEY` is set on the server. The key never reaches the browser (`bootstrap` only sends `orsEnabled`).
+- Tracking (`server/routes/tracking.ts`, `hooks/useLiveSharing.ts`): `POST /api/tracking/ping` is accepted ONLY while the auditor has a plan In Progress (server-enforced); `GET /api/tracking/live` and `/trail` are manager-only and territory-scoped.
+- Security headers are strict in production (`server/app.ts`): frame deny, same-origin COOP/CORP, no `ws:`/`blob:` scripts; development relaxes only what Vite needs. Production never falls back from MySQL to SQLite (it exits instead).
 
-## mobile-apk-test/ (Android test app, separate)
-- Standalone auditor-only Capacitor project (own package.json, README). Its `src/` holds COPIES of the auditor screens from the main `src/` plus a native API client (`src/api/client.ts`: configurable server address, refresh token held by the app) and `NativeLogin`/`App.tsx`. Excluded from the main lint/build/Docker. Server support: opt-in `client:'native'` on login/refresh/logout (`server/routes/auth.ts`), mobile surface only; needs `CORS_ORIGINS=http://localhost,https://localhost`. When auditor screens change in the main app, re-copy them into `mobile-apk-test/src`.
+## Android APK (separate project)
+- The auditor APK is built from a separate Capacitor project (not in this repo). It uses this server's API with `client:'native'` sign-in on the mobile surface (the refresh token is held by the app, returned in the response body); it needs `CORS_ORIGINS=http://localhost,https://localhost`. Auditor screens in `src/components/mobile/` and `src/components/forms/` are the source for the app's copies: when they change, re-copy them into the APK project.

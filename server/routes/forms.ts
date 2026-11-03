@@ -105,7 +105,10 @@ export function formRoutes(db: Knex) {
 
   r.get('/forms', async (_req, res) => {
     const rows = await db('audit_forms').orderBy('code');
-    res.json(rows.map((x: any) => parseJson(x.data, {})));
+    const counts = await db('audit_submissions').select('form_id').count({ n: '*' }).groupBy('form_id');
+    const used = new Map<string, number>(counts.map((c: any) => [c.form_id, Number(c.n)]));
+    // submissionCount tells the editor how much of a form is still free to change (a form nobody has answered is fully editable).
+    res.json(rows.map((x: any) => ({ ...parseJson<any>(x.data, {}), submissionCount: used.get(x.id) ?? 0 })));
   });
 
   r.get('/forms/:formId/config', async (req, res) => {
@@ -128,6 +131,17 @@ export function formRoutes(db: Knex) {
       const bad = checkCustomFields(cp.data.fields);
       if (bad) return res.status(400).json({ error: bad });
       const cur = await db('form_configs').where({ form_id: formId }).first();
+      // A form nobody has answered is fully editable. Once audits exist, saved questions keep their key and answer type
+      // (so old answers stay readable); they can still be renamed, re-ordered, made optional, or hidden.
+      const submissions = Number((await db('audit_submissions').where({ form_id: formId }).count({ n: '*' }).first() as any).n);
+      if (submissions > 0 && cur) {
+        const before = parseJson<{ fields: { key: string; type: string; label: string }[] }>(cur.config, { fields: [] }).fields;
+        for (const old of before) {
+          const now = cp.data.fields.find((f) => f.key === old.key);
+          if (!now) return res.status(409).json({ error: `"${old.label}" already has answers. Hide it instead of removing it.` });
+          if (now.type !== old.type) return res.status(409).json({ error: `"${old.label}" already has answers, so its answer type cannot change.` });
+        }
+      }
       const version = (cur?.version ?? 0) + 1;
       const config = { settings: cp.data.settings, fields: cp.data.fields };
       const row = { form_id: formId, version, config: toJson(config), updated_by: req.auth!.user.id, updated_at: sqlTime() };
@@ -187,9 +201,17 @@ export function formRoutes(db: Knex) {
       shortTitle: z.string().trim().min(1).max(80),
       description: z.string().max(1500),
       status: z.enum(['Active', 'Inactive']),
+      target: z.enum(['distributor', 'subLocation', 'shop']).optional(),
     }).safeParse(req.body);
     if (!p.success) return res.status(400).json({ error: 'Invalid data.' });
     const cur = parseJson<any>(row.data, {});
+    if (p.data.target && p.data.target !== cur.target) {
+      if (cur.kind !== 'custom') return res.status(400).json({ error: 'Built-in forms always audit the same kind of place.' });
+      const answered = Number((await db('audit_submissions').where({ form_id: row.id }).count({ n: '*' }).first() as any).n);
+      if (answered > 0) return res.status(409).json({ error: 'This form already has audits, so what it audits cannot change. Duplicate it instead.' });
+      const planned = Number((await db('audit_plans').where('data', 'like', `%${row.id}%`).count({ n: '*' }).first() as any).n);
+      if (planned > 0) return res.status(409).json({ error: 'Audit plans already use this form. Cancel or finish them before changing what it audits.' });
+    }
     const next = { ...cur, ...p.data, updatedAt: sqlTime().slice(0, 10) };
     await db('audit_forms').where({ id: row.id }).update({ status: next.status, data: toJson(next), updated_at: sqlTime() });
     await logActivity(db, req, 'forms.update', 'audit_forms', row.id);
@@ -218,6 +240,30 @@ export function formRoutes(db: Knex) {
     await db('form_configs').insert({ form_id: id, version: 1, config: toJson({ settings: p.data.settings, fields: p.data.fields }), updated_by: req.auth!.user.id, updated_at: now });
     await logActivity(db, req, 'forms.create', 'audit_forms', id);
     res.status(201).json({ form: meta, config: { formId: id, version: 1, settings: p.data.settings, fields: p.data.fields } });
+  });
+
+  /** Copy a custom form (questions + settings) into a new, switched-off form so it can be adjusted before going live. */
+  r.post('/forms/:formId/duplicate', needForms, async (req, res) => {
+    const row = await db('audit_forms').where({ id: req.params.formId }).first();
+    if (!row) return res.status(404).json({ error: 'Not found.' });
+    const src = parseJson<any>(row.data, {});
+    if (src.kind !== 'custom') return res.status(400).json({ error: 'Only custom forms can be duplicated.' });
+    const cfg = await loadFormConfig(db, row.id);
+    if (!cfg) return res.status(404).json({ error: 'Form has no questions to copy.' });
+    const n = Number((await db('audit_forms').count({ n: '*' }).first() as any).n);
+    let code = '';
+    for (let i = n + 1; i < n + 50; i++) {
+      code = `FRM-CUS-${String(i).padStart(2, '0')}`;
+      if (!(await db('audit_forms').where({ code }).first())) break;
+    }
+    const id = `form-custom-${newId('f').slice(2)}`;
+    const now = sqlTime();
+    const title = `Copy of ${src.title}`.slice(0, 160);
+    const meta = { ...src, id, code, title, shortTitle: `${src.shortTitle} copy`.slice(0, 40), status: 'Inactive', updatedAt: now.slice(0, 10) };
+    await db('audit_forms').insert({ id, code, status: 'Inactive', data: toJson(meta), created_at: now, updated_at: now });
+    await db('form_configs').insert({ form_id: id, version: 1, config: toJson(cfg.config), updated_by: req.auth!.user.id, updated_at: now });
+    await logActivity(db, req, 'forms.duplicate', 'audit_forms', id, { from: row.id });
+    res.status(201).json({ form: { ...meta, submissionCount: 0 }, config: { formId: id, version: 1, ...cfg.config } });
   });
 
   r.delete('/forms/:formId', needForms, async (req, res) => {

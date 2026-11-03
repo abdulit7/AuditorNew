@@ -8,6 +8,7 @@ export type GPSVerificationStatus =
 
 export type EntityStatus = 'Active' | 'Inactive';
 
+export type RoleType = 'admin' | 'manager' | 'auditor';
 export type RoleSurface = 'Web Dashboard' | 'Mobile PWA' | 'Dual (Web + Mobile)';
 
 export interface City {
@@ -125,6 +126,7 @@ export interface UserRole {
   code: string;
   name: string;
   surface: RoleSurface;
+  roleType: RoleType; // admin = everything (web); manager = web, partial; auditor = mobile app only
   description: string;
   isSystemRole: boolean;
   permissions: Record<string, boolean>;
@@ -192,6 +194,8 @@ export interface AuditFormDefinition {
   allowPhotoCapture: boolean;
   status: EntityStatus;
   updatedAt: string;
+  /** Audits already submitted with this form (server-provided). 0 = every part of the form is still editable. */
+  submissionCount?: number;
 }
 
 export interface DistributorAuditLineItem {

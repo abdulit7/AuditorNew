@@ -17,6 +17,7 @@ import { reportRoutes } from './routes/reports';
 import { planRoutes } from './routes/plans';
 import { submissionRoutes } from './routes/submissions';
 import { analyticsRoutes } from './routes/analytics';
+import { routingRoutes } from './routes/routing';
 import { trackingRoutes } from './routes/tracking';
 import { userRoutes } from './routes/users';
 
@@ -26,54 +27,36 @@ export function createApp(db: Knex, cfg: AppConfig) {
   if (cfg.TRUST_PROXY > 0) app.set('trust proxy', cfg.TRUST_PROXY);
   app.set('cfg', cfg);
 
+  // Strict in production. Development relaxes only what Vite's dev server / the AI Studio preview frame need.
+  const dev = !cfg.isProd;
+  const google = !!cfg.GOOGLE_MAPS_API_KEY;
+  const TILE_HOSTS = ['https://tiles.openfreemap.org', 'https://*.openfreemap.org', 'https://tile.openstreetmap.org', 'https://*.tile.openstreetmap.org'];
   app.use(
     helmet({
-      frameguard: false,
+      frameguard: dev ? false : { action: 'deny' },
       contentSecurityPolicy: {
         useDefaults: true,
         directives: {
           'default-src': ["'self'"],
-          // MapLibre + OpenFreeMap works without any API key; Google Maps is allowed as an optional upgrade when a key is configured.
-          'script-src': [
-            "'self'",
-            'blob:',
-            ...(cfg.isProd ? [] : ["'unsafe-inline'", "'unsafe-eval'"]),
-            ...(cfg.GOOGLE_MAPS_API_KEY ? ['https://maps.googleapis.com', 'https://maps.gstatic.com'] : []),
-          ],
+          // MapLibre + OpenFreeMap works without any API key; Google Maps is an optional upgrade when a key is configured.
+          'script-src': ["'self'", ...(dev ? ["'unsafe-inline'", "'unsafe-eval'", 'blob:'] : []), ...(google ? ['https://maps.googleapis.com', 'https://maps.gstatic.com'] : [])],
+          // MapLibre runs its tile worker from a blob: URL.
           'worker-src': ["'self'", 'blob:'],
           'child-src': ["'self'", 'blob:'],
-          'img-src': [
-            "'self'",
-            'data:',
-            'blob:',
-            'https:',
-            ...(cfg.GOOGLE_MAPS_API_KEY ? ['https://maps.gstatic.com', 'https://maps.googleapis.com', 'https://*.ggpht.com', 'https://*.googleusercontent.com'] : []),
-          ],
+          'img-src': ["'self'", 'data:', 'blob:', ...TILE_HOSTS, ...(google ? ['https://maps.gstatic.com', 'https://maps.googleapis.com', 'https://*.ggpht.com', 'https://*.googleusercontent.com'] : [])],
           'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
-          'font-src': ["'self'", 'https://fonts.gstatic.com', 'https://tiles.openfreemap.org', 'https://*.openfreemap.org', 'data:'],
-          'connect-src': [
-            "'self'",
-            'blob:',
-            'ws:',
-            'wss:',
-            'https://tiles.openfreemap.org',
-            'https://*.openfreemap.org',
-            'https://router.project-osrm.org',
-            'https://api.openrouteservice.org',
-            'https://tile.openstreetmap.org',
-            'https://*.tile.openstreetmap.org',
-            'https://*.basemaps.cartocdn.com',
-            ...(cfg.GOOGLE_MAPS_API_KEY ? ['https://maps.googleapis.com', 'https://*.googleapis.com', 'https://*.gstatic.com'] : []),
-          ],
-          'frame-ancestors': null,
+          'font-src': ["'self'", 'https://fonts.gstatic.com', 'data:', ...TILE_HOSTS],
+          // Route lines are fetched through our own /api/routing, so no routing hosts are needed here.
+          'connect-src': ["'self'", 'blob:', ...(dev ? ['ws:', 'wss:'] : []), ...TILE_HOSTS, ...(google ? ['https://maps.googleapis.com', 'https://*.googleapis.com', 'https://*.gstatic.com'] : [])],
+          'frame-ancestors': dev ? null : ["'none'"],
           'upgrade-insecure-requests': cfg.isProd ? [] : null,
         },
       },
       hsts: cfg.isProd ? { maxAge: 31_536_000, includeSubDomains: true } : false,
       referrerPolicy: { policy: 'same-origin' },
       crossOriginEmbedderPolicy: false,
-      crossOriginResourcePolicy: false,
-      crossOriginOpenerPolicy: false,
+      crossOriginResourcePolicy: dev ? false : { policy: 'same-origin' },
+      crossOriginOpenerPolicy: dev ? false : { policy: 'same-origin' },
     })
   );
   app.use((_req, res, next) => {
@@ -105,7 +88,8 @@ export function createApp(db: Knex, cfg: AppConfig) {
     if (!origin) return next();
     let host = '';
     try { host = new URL(origin).host; } catch { /* invalid origin */ }
-    const allowedHosts = [req.get('host'), req.get('x-forwarded-host')].filter(Boolean);
+    // x-forwarded-host is only believed when the app is configured to sit behind a trusted proxy.
+    const allowedHosts = [req.get('host'), ...(cfg.TRUST_PROXY > 0 ? [req.get('x-forwarded-host')] : [])].filter(Boolean);
     if (host && allowedHosts.includes(host)) return next();
     if (cfg.corsOrigins.includes(origin)) return next();
     res.status(403).json({ error: 'Cross-site request blocked.' });
@@ -133,6 +117,7 @@ export function createApp(db: Knex, cfg: AppConfig) {
   guarded.use(planRoutes(db));
   guarded.use(analyticsRoutes(db));
   guarded.use(trackingRoutes(db));
+  guarded.use(routingRoutes(cfg));
   guarded.use(photoRoutes(db, cfg));
   app.use('/api', guarded);
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found.' }));

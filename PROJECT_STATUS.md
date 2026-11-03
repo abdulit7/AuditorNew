@@ -16,7 +16,7 @@ Repo has 35 files, ~12.8k lines of TSX, single initial commit. `npm ci`, `tsc --
 ### What exists and works
 | Area | Status |
 |---|---|
-| Login (Web Portal / Mobile Browser toggle, role/surface rules, inactive check) | Works (client-side) |
+| Login (Web Portal only for managers/admins; auditors use the app via native sign-in; inactive check) | Works (client-side) |
 | Dashboard: KPI cards, distributors by city, audits by auditor, shops by territory, GPS-match split | Works, looks good on desktop |
 | Geography CRUD: cities, territories, locations, sub-locations, shops, cascading filters, coordinate picker | Works (in memory) |
 | Distributors: setup/owner/CNIC, city+territory, group links, per-product Active/Inactive, detail view | Works (in memory) |
@@ -77,3 +77,9 @@ Managers/admins: full portal on web and on a phone. Auditors: forms + plans on w
 
 ## Update: maps + live location
 Built and tested with Google Maps selected as provider. The sandbox cannot reach Google, so the real map rendering was NOT visually verified here (fallback list, pings, live list, privacy rule and banner were). Needs a real API key + HTTPS to verify tiles, pins, drawn routes and the Content-Security-Policy. Not done: click-on-map coordinate picker for entering distributor/shop locations (the existing picker is still the schematic one); background tracking when the phone screen is off (not possible in a browser).
+
+## 2026-11-03 — Review fixes, role types, form editing (AuditorNew)
+- Fixed: production no longer falls back from MySQL to SQLite; `server:dev`/`start` work on Windows (`pathToFileURL`); strict headers in production (frame deny, COOP/CORP, no `ws:`/`blob:` scripts); `x-forwarded-host` trusted only behind a proxy; browsers cannot sign in as auditors or use the mobile surface; `package-lock.json` committed; AI Studio files removed from the repo and git-ignored.
+- Maps: OpenFreeMap style failure now falls back to OpenStreetMap automatically; route lines go through `/api/routing/route` so the OpenRouteService key stays on the server. Verified the map worker under the production CSP (no violations). Real tiles still need checking on a real network.
+- Roles: Administrator / Manager / Auditor types, enforced on the server, with a role-type selector in the roles screen.
+- Forms: fully editable until the first audit; afterwards saved questions keep key and type (hide instead of delete); show/hide per question, placeholders, discard changes, duplicate a custom form. 36 API tests pass; checked at 1440x900 and 390x844.

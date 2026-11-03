@@ -33,8 +33,10 @@ import {
   ProductGroup,
   ActivePageId,
   RoleSurface,
+  RoleType,
 } from '../../types/infrastructure';
 import { PERMISSION_DEFINITIONS } from '../../data/permissions';
+import { ROLE_TYPE_INFO, applyRoleType, isPermissionLocked, wouldBecomeAdmin } from '../../utils/roles';
 import {
   EntityStatusIndicator,
   SurfaceAccessLabel,
@@ -113,7 +115,7 @@ export function UsersAndRolesPages({
 
     const openCreateMobileUserModal = () => {
       const defaultMobileRole =
-        roles.find((r) => r.surface === 'Mobile PWA') || roles[0];
+        roles.find((r) => r.roleType === 'auditor') || roles[0];
       const defaultCityId = cities[0]?.id || 'city-guj';
       const defaultTer = territories.find((t) => t.cityId === defaultCityId);
 
@@ -143,7 +145,7 @@ export function UsersAndRolesPages({
 
     const openCreateWebUserModal = () => {
       const defaultWebRole =
-        roles.find((r) => r.surface === 'Web Dashboard') || roles[0];
+        roles.find((r) => r.roleType === 'manager') || roles.find((r) => r.roleType !== 'auditor') || roles[0];
 
       setEditingUser({
         id: `usr-${Date.now()}`,
@@ -698,7 +700,7 @@ export function UsersAndRolesPages({
 
                       <div>
                         <label className="block text-xs font-semibold text-[#0F172A] mb-1">
-                          Web Role
+                          Role (Administrator or Manager)
                         </label>
                         <select
                           value={editingUser.roleId}
@@ -708,7 +710,7 @@ export function UsersAndRolesPages({
                           className="w-full px-3 py-2 text-sm bg-white border border-[#CBD5E1] rounded focus-ring"
                         >
                           {roles
-                            .filter((r) => r.surface !== 'Mobile PWA')
+                            .filter((r) => r.roleType !== 'auditor')
                             .map((r) => (
                               <option key={r.id} value={r.id}>
                                 {r.name} ({r.code})
@@ -732,7 +734,7 @@ export function UsersAndRolesPages({
                         className="w-full px-3 py-2 text-sm bg-white border border-[#CBD5E1] rounded focus-ring"
                       >
                         {roles
-                          .filter((r) => r.surface === 'Mobile PWA')
+                          .filter((r) => r.roleType === 'auditor')
                           .map((r) => (
                             <option key={r.id} value={r.id}>
                               {r.name} ({r.code})
@@ -966,6 +968,15 @@ export function UsersAndRolesPages({
   // 2. USER ROLES FOR WEB & MOBILE (RBAC MATRIX) PAGE
   // ============================================================================
   const togglePermission = (roleId: string, permKey: string) => {
+    const target = getRole(roleId);
+    if (target && isPermissionLocked(target, permKey)) {
+      onToast(target.roleType === 'admin' ? 'Administrators always have every permission.' : 'Auditors cannot hold web permissions.');
+      return;
+    }
+    if (target && wouldBecomeAdmin(target, permKey)) {
+      onToast('That would give this manager every web permission - make it an Administrator role instead.');
+      return;
+    }
     setRoles((prev) =>
       prev.map((r) =>
         r.id === roleId
@@ -989,6 +1000,7 @@ export function UsersAndRolesPages({
       code: `ROL-CUSTOM-0${roles.length + 1}`,
       name: '',
       surface: 'Mobile PWA',
+      roleType: 'auditor',
       description: '',
       isSystemRole: false,
       permissions: {
@@ -1012,12 +1024,13 @@ export function UsersAndRolesPages({
     e.preventDefault();
     if (!editingRole || !editingRole.name.trim() || !editingRole.code.trim()) return;
     const exists = roles.some((r) => r.id === editingRole.id);
+    const normalized = applyRoleType(editingRole, editingRole.roleType);
     if (exists) {
-      setRoles((prev) => prev.map((r) => (r.id === editingRole.id ? editingRole : r)));
+      setRoles((prev) => prev.map((r) => (r.id === normalized.id ? normalized : r)));
       onToast(`Updated role ${editingRole.name}.`);
     } else {
-      setRoles((prev) => [...prev, editingRole]);
-      onToast(`Created new ${editingRole.surface} role: ${editingRole.name}.`);
+      setRoles((prev) => [...prev, normalized]);
+      onToast(`Created new ${ROLE_TYPE_INFO[normalized.roleType].label} role: ${normalized.name}.`);
     }
     setRoleModalOpen(false);
   };
@@ -1063,7 +1076,9 @@ export function UsersAndRolesPages({
             >
               <div className="space-y-2">
                 <div className="flex items-center justify-between gap-2">
-                  <SurfaceAccessLabel surface={role.surface} />
+                  <span className="inline-flex items-center gap-1.5 text-[11px] font-bold px-2 py-0.5 rounded bg-[#E9EEF5] text-[#1E3A5F]">
+                    {ROLE_TYPE_INFO[role.roleType]?.label} · {ROLE_TYPE_INFO[role.roleType]?.where}
+                  </span>
                   <span className="font-mono text-xs text-[#475569]">{role.code}</span>
                 </div>
                 <h2 className="text-base font-bold text-[#0F172A]">{role.name}</h2>
@@ -1115,7 +1130,7 @@ export function UsersAndRolesPages({
                   <th key={r.id} className="py-2.5 px-3 text-center min-w-[130px]">
                     <div className="text-xs font-bold text-[#0F172A]">{r.name}</div>
                     <div className="font-mono text-[10px] text-[#475569] font-normal mt-0.5">
-                      {r.surface}
+                      {ROLE_TYPE_INFO[r.roleType]?.label ?? r.surface}
                     </div>
                   </th>
                 ))}
@@ -1146,8 +1161,9 @@ export function UsersAndRolesPages({
                         <button
                           type="button"
                           onClick={() => togglePermission(role.id, perm.key)}
+                          disabled={isPermissionLocked(role, perm.key)}
                           aria-label={`Toggle ${perm.label} for ${role.name}`}
-                          className={`w-7 h-7 rounded inline-flex items-center justify-center border transition-colors cursor-pointer ${
+                          className={`w-7 h-7 rounded inline-flex items-center justify-center border transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-60 ${
                             isGranted
                               ? 'bg-[#1E3A5F] border-[#1E3A5F] text-white'
                               : 'bg-white border-[#CBD5E1] text-transparent hover:border-[#475569]'
@@ -1185,8 +1201,9 @@ export function UsersAndRolesPages({
                         <button
                           type="button"
                           onClick={() => togglePermission(role.id, perm.key)}
+                          disabled={isPermissionLocked(role, perm.key)}
                           aria-label={`Toggle ${perm.label} for ${role.name}`}
-                          className={`w-7 h-7 rounded inline-flex items-center justify-center border transition-colors cursor-pointer ${
+                          className={`w-7 h-7 rounded inline-flex items-center justify-center border transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-60 ${
                             isGranted
                               ? 'bg-teal-700 border-teal-700 text-white'
                               : 'bg-white border-[#CBD5E1] text-transparent hover:border-[#475569]'
@@ -1243,21 +1260,21 @@ export function UsersAndRolesPages({
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-[#0F172A] mb-1">
-                    Target Surface
+                    Role Type
                   </label>
                   <select
-                    value={editingRole.surface === 'Dual (Web + Mobile)' ? 'Web Dashboard' : editingRole.surface}
-                    onChange={(e) =>
-                      setEditingRole({
-                        ...editingRole,
-                        surface: e.target.value as RoleSurface,
-                      })
-                    }
-                    className="w-full px-3 py-2 text-sm bg-white border border-[#CBD5E1] rounded focus-ring"
+                    value={editingRole.roleType}
+                    disabled={roles.some((r) => r.id === editingRole.id && (r.isSystemRole || users.some((u) => u.roleId === r.id)))}
+                    onChange={(e) => setEditingRole(applyRoleType(editingRole, e.target.value as RoleType))}
+                    className="w-full px-3 py-2 text-sm bg-white border border-[#CBD5E1] rounded focus-ring disabled:bg-[#F1F5F9]"
                   >
-                    <option value="Web Dashboard">Web Dashboard (Portal Managers)</option>
-                    <option value="Mobile PWA">Mobile App (Android APK Auditors)</option>
+                    {(['admin', 'manager', 'auditor'] as RoleType[]).map((t) => (
+                      <option key={t} value={t}>
+                        {ROLE_TYPE_INFO[t].label} - {ROLE_TYPE_INFO[t].where}
+                      </option>
+                    ))}
                   </select>
+                  <p className="text-[11px] text-[#475569] mt-1">{ROLE_TYPE_INFO[editingRole.roleType].blurb}</p>
                 </div>
                 <div className="sm:col-span-2">
                   <label className="block text-xs font-semibold text-[#0F172A] mb-1">

@@ -22,8 +22,11 @@ export function bootstrapRoutes(db: Knex) {
       out[names[d.path]] = rows.map((x: any) => parseJson(x.data, {}));
     }
     out.mapsApiKey = (req.app.get('cfg') as any)?.GOOGLE_MAPS_API_KEY || '';
-    out.orsApiKey = (req.app.get('cfg') as any)?.OPENROUTESERVICE_API_KEY || '';
-    out.forms = (await db('audit_forms').orderBy('code')).map((x: any) => parseJson(x.data, {}));
+    // The routing key never leaves the server (see routes/routing.ts); the client only learns whether it is available.
+    out.orsEnabled = !!(req.app.get('cfg') as any)?.OPENROUTESERVICE_API_KEY;
+    const counts = await db('audit_submissions').select('form_id').count({ n: '*' }).groupBy('form_id');
+    const answered = new Map<string, number>(counts.map((c: any) => [c.form_id, Number(c.n)]));
+    out.forms = (await db('audit_forms').orderBy('code')).map((x: any) => ({ ...parseJson<any>(x.data, {}), submissionCount: answered.get(x.id) ?? 0 }));
     const configs: Record<string, unknown> = {};
     for (const f of out.forms as any[]) {
       const id = f.id as string;

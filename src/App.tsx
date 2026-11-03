@@ -90,7 +90,7 @@ export default function App() {
   const [auditForms, setAuditForms] = useState<AuditFormDefinition[]>([]);
   const [formConfigs, setFormConfigs] = useState<FormConfigMap>({});
   const [mapsApiKey, setMapsApiKey] = useState('');
-  const [orsApiKey, setOrsApiKey] = useState('');
+  const [orsEnabled, setOrsEnabled] = useState(false);
   const [auditReports, setAuditReports] = useState<DistributorProductAuditReport[]>([]);
   const [retailShopReports, setRetailShopReports] = useState<RetailMarketShopAuditReport[]>([]);
   const [selectedMobileAuditorId, setSelectedMobileAuditorId] = useState<string>('');
@@ -131,7 +131,7 @@ export default function App() {
       hydrateRoles(boot.roles ?? (s.role ? [s.role] : []));
       const defaultAuditor = (boot.users ?? []).find((u: AppUser) => u.userType === 'mobile');
       setSelectedMobileAuditorId(defaultAuditor?.id || s.user.id);
-      setAuditForms(boot.forms); setFormConfigs(boot.formConfigs); setMapsApiKey(boot.mapsApiKey || ''); setOrsApiKey(boot.orsApiKey || '');
+      setAuditForms(boot.forms); setFormConfigs(boot.formConfigs); setMapsApiKey(boot.mapsApiKey || ''); setOrsEnabled(!!boot.orsEnabled);
       setAuditReports(dr); setRetailShopReports(rr);
     } catch (e) {
       setLoadError(e instanceof ApiError ? e.message : 'Could not load your data.');
@@ -634,7 +634,7 @@ export default function App() {
             )}
 
             {activePage === 'map' && (
-              <MapLivePage apiKey={mapsApiKey} orsApiKey={orsApiKey} cities={cities} territories={territories} distributors={distributors} shops={shops} />
+              <MapLivePage apiKey={mapsApiKey} orsEnabled={orsEnabled} cities={cities} territories={territories} distributors={distributors} shops={shops} />
             )}
 
             {activePage === 'analytics' && (
@@ -644,7 +644,7 @@ export default function App() {
             {activePage === 'reports' && (
               <AuditReportsPage
                 apiKey={mapsApiKey}
-                orsApiKey={orsApiKey}
+                orsEnabled={orsEnabled}
                 users={users}
                 cities={cities}
                 territories={territories}

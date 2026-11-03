@@ -112,9 +112,9 @@ export async function refreshSession(): Promise<Session | null> {
 
 export async function api<T = any>(
   path: string,
-  opts: { method?: string; json?: unknown; form?: FormData } = {}
+  opts: { method?: string; json?: unknown; form?: FormData; signal?: AbortSignal } = {}
 ): Promise<T> {
-  const init: RequestInit & { json?: unknown } = { method: opts.method || 'GET', json: opts.json, body: opts.form };
+  const init: RequestInit & { json?: unknown } = { method: opts.method || 'GET', json: opts.json, body: opts.form, signal: opts.signal };
   let res = await send(path, init);
   if (res.status === 401 && !path.startsWith('/api/auth/')) {
     const s = await refreshSession().catch(() => null);

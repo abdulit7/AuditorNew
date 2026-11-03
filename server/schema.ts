@@ -229,6 +229,23 @@ export const migrations: Migration[] = [
       });
     },
   },
+  {
+    id: '005_role_type',
+    up: async (k) => {
+      // Three role types: admin (everything, web), manager (web, partial), auditor (mobile app only).
+      await k.schema.alterTable('roles', (t) => {
+        t.string('role_type', 10).notNullable().defaultTo('manager');
+      });
+      const web = ['web.geography.manage', 'web.shops.manage', 'web.distributor.reassign', 'web.products.manage', 'web.users.manage', 'web.forms.manage'];
+      for (const r of await k('roles')) {
+        const perms = typeof r.permissions === 'string' ? JSON.parse(r.permissions || '{}') : r.permissions || {};
+        const type = r.surface === 'Mobile PWA' ? 'auditor' : web.every((x) => perms[x] === true) ? 'admin' : 'manager';
+        const patch: any = { role_type: type };
+        if (type === 'admin' || type === 'manager') patch.surface = 'Web Dashboard'; // "Dual" no longer exists as a role surface
+        await k('roles').where({ id: r.id }).update(patch);
+      }
+    },
+  },
 ];
 
 export async function migrate(k: Knex): Promise<void> {

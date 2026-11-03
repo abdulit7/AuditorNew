@@ -1,6 +1,6 @@
 # Deploying AuditGrid to the internet
 
-One container serves both the web portal and the mobile browser app **and** the API (same origin), backed by MySQL 8. Every user signs in with their own credentials and gets their own session.
+One container serves the management web portal (desktop and phone browsers) **and** the API used by the auditor mobile app (same origin for the web portal), backed by MySQL 8. Every user signs in with their own credentials and gets their own session.
 
 ## Fastest public test (no domain, no open ports): Cloudflare Tunnel
 ```bash
@@ -36,10 +36,9 @@ Production refuses to start if `JWT_ACCESS_SECRET` is weak/missing, `COOKIE_SECU
 - **Logs**: `docker compose logs -f app`. Security events (logins, failures, lockouts, form edits, exports) are in the `activity_log` table.
 - **Scaling note**: rate limiting is per process; run one app container (fine for hundreds of auditors) or move limits to the proxy.
 
-## Google Maps (pins, routes, live locations)
-1. In Google Cloud Console create a project, **enable billing**, and enable **Maps JavaScript API** (and **Directions API** if you want the route drawn inside the app; the "Directions" button that opens the Google Maps app works without it).
-2. Create an API key and **restrict it**: Application restriction = HTTP referrers (your site, e.g. `https://audit.example.com/*`), API restriction = the APIs above. Set a budget alert.
-3. Put it in `.env` as `GOOGLE_MAPS_API_KEY=...` and restart. The server adds Google to the Content-Security-Policy only when a key is set.
-4. Phones need **HTTPS** for location (browsers block GPS on plain http).
+## Maps (pins, routes, live locations)
+The default map is **MapLibre + OpenFreeMap** (no key); it falls back to OpenStreetMap tiles. Route lines go through `POST /api/routing/route` (OSRM, or OpenRouteService via `OPENROUTESERVICE_API_KEY`, kept on the server). Optional Google Maps: set `GOOGLE_MAPS_API_KEY`. Production refuses to start when MySQL is unreachable.
 
-Live locations: an auditor's phone shares its position only while one of their plans is **In Progress** (the server refuses positions otherwise). Browsers cannot track a phone with the screen off or the app closed; the app keeps the screen awake while sharing. History is kept 30 days.
+Optional Google Maps upgrade: in Google Cloud Console create a project, **enable billing**, enable **Maps JavaScript API**, create a key **restricted by HTTP referrer** (e.g. `https://audit.example.com/*`), set a budget alert, then put it in `.env` as `GOOGLE_MAPS_API_KEY=...` and restart. The server adds Google to the Content-Security-Policy only when a key is set. The mobile app needs location permission (and HTTPS for any browser-based GPS).
+
+Live locations: an auditor's app shares its position only while one of their plans is **In Progress** (the server refuses positions otherwise). History is kept 30 days.

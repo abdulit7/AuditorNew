@@ -9,3 +9,7 @@ coverage/
 /data/
 /data-test/
 /dist-server/
+
+# AI Studio working files (design notes/screenshots) - keep out of the repo and out of the public web root
+.aistudio/
+public/assets/aistudio/

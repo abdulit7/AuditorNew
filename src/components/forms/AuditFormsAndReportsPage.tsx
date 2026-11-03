@@ -276,6 +276,7 @@ export function AuditFormsAndReportsPage({
               onCreated={() => undefined}
               onSaved={(f, c) => { onFormUpdated(f); onFormConfigSaved(c); }}
               onDeleted={(id) => { onFormDeleted(id); setSelectedFormId(auditForms.find((x) => x.id !== id)?.id || ''); }}
+              onDuplicated={(f, c) => { onFormCreated(f, c); setSelectedFormId(f.id); }}
             />
           ) : (
           <FormConfigEditor

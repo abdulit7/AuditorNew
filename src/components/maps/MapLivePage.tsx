@@ -15,7 +15,7 @@ interface Live { serverTime: string; liveWindowMinutes: number; auditors: LiveAu
 
 interface Props {
   apiKey: string;
-  orsApiKey?: string;
+  orsEnabled?: boolean;
   cities: City[];
   territories: Territory[];
   distributors: Distributor[];
@@ -26,7 +26,7 @@ const sel = 'min-h-[36px] px-2.5 text-xs font-semibold bg-white border border-[#
 const ago = (s: number) => (s < 60 ? 'just now' : s < 3600 ? `${Math.round(s / 60)} min ago` : `${Math.round(s / 3600)} h ago`);
 const pktDay = () => new Date(Date.now() + 5 * 3_600_000).toISOString().slice(0, 10);
 
-export function MapLivePage({ apiKey, orsApiKey, cities, territories, distributors, shops }: Props) {
+export function MapLivePage({ apiKey, orsEnabled, cities, territories, distributors, shops }: Props) {
   const [cityId, setCityId] = useState('');
   const [territoryId, setTerritoryId] = useState('');
   const [showDist, setShowDist] = useState(true);
@@ -261,7 +261,7 @@ export function MapLivePage({ apiKey, orsApiKey, cities, territories, distributo
                 className={sel}
               >
                 <option value="osrm">OSRM Road Router (No key)</option>
-                <option value="ors">OpenRouteService{orsApiKey ? '' : ' (OSRM fallback)'}</option>
+                <option value="ors">OpenRouteService{orsEnabled ? '' : ' (OSRM fallback)'}</option>
               </select>
 
               <select
@@ -365,7 +365,7 @@ export function MapLivePage({ apiKey, orsApiKey, cities, territories, distributo
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_340px] gap-4 items-start">
         <GoogleMap
           apiKey={apiKey}
-          orsApiKey={orsApiKey}
+          orsEnabled={orsEnabled}
           markers={markers}
           paths={trail}
           routeWaypoints={routeWaypoints}

@@ -28,7 +28,7 @@ import { directionsUrl, hasCoords } from '../../utils/maps';
 
 interface AuditReportsPageProps {
   apiKey?: string;
-  orsApiKey?: string;
+  orsEnabled?: boolean;
   users: AppUser[];
   cities: City[];
   territories: Territory[];
@@ -47,7 +47,7 @@ type CombinedReportItem =
 
 export function AuditReportsPage({
   apiKey,
-  orsApiKey,
+  orsEnabled,
   users,
   cities,
   subLocations,
@@ -487,7 +487,7 @@ export function AuditReportsPage({
                     </div>
                     <GoogleMap
                       apiKey={apiKey}
-                      orsApiKey={orsApiKey}
+                      orsEnabled={orsEnabled}
                       height={240}
                       markers={[
                         {
@@ -795,7 +795,7 @@ export function AuditReportsPage({
                       </div>
                       <GoogleMap
                         apiKey={apiKey}
-                        orsApiKey={orsApiKey}
+                        orsEnabled={orsEnabled}
                         height={260}
                         markers={shopReport.shopAudits.flatMap((sa) => [
                           {

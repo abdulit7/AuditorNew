@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import type { Knex } from 'knex';
 import { z } from 'zod';
-import { can, WEB_PERMS, type AuthContext } from '../access';
+import { can, WEB_PERMS, normalizeRole, deriveRoleType, type AuthContext, type RoleType } from '../access';
 import { logActivity } from '../audit';
 import { parseJson, toJson } from '../db';
 import { idSchema } from '../schemas';
@@ -31,7 +31,8 @@ const RoleBody = z.object({
   id: idSchema.optional(),
   code: z.string().trim().min(1).max(64),
   name: z.string().trim().min(1).max(160),
-  surface: z.enum(['Web Dashboard', 'Mobile PWA', 'Dual (Web + Mobile)']),
+  surface: z.enum(['Web Dashboard', 'Mobile PWA', 'Dual (Web + Mobile)']).optional(),
+  roleType: z.enum(['admin', 'manager', 'auditor']).optional(),
   description: z.string().max(500),
   isSystemRole: z.boolean().optional(),
   permissions: z.record(z.string().max(64), z.boolean()),
@@ -68,6 +69,9 @@ export function userRoutes(db: Knex) {
     if (b.userType === 'mobile' && WEB_PERMS.some((k) => rolePerms(role)[k])) {
       return 'Mobile-only users cannot hold web management permissions.';
     }
+    // Auditors (mobile app only) hold the Auditor role type; administrators and managers hold the other two.
+    if (role.role_type === 'auditor' && b.userType !== 'mobile') return 'Auditor roles are for Mobile (auditor) users only.';
+    if (role.role_type !== 'auditor' && b.userType === 'mobile') return 'Mobile (auditor) users must have an Auditor role. Administrator and Manager roles are for Web users.';
     if (existingId === a.user.id && (b.status !== 'Active' || b.roleId !== a.user.roleId)) {
       return 'You cannot deactivate yourself or change your own role.';
     }
@@ -170,9 +174,12 @@ export function userRoutes(db: Knex) {
     if (await db('roles').where({ code: b.code }).first()) return res.status(409).json({ error: `Code "${b.code}" is already used.` });
     const id = b.id ?? newId('role');
     if (await db('roles').where({ id }).first()) return res.status(409).json({ error: 'That id already exists.' });
+    const type: RoleType = b.roleType ?? deriveRoleType(b.surface ?? 'Web Dashboard', b.permissions);
+    const norm = normalizeRole(type, b.permissions);
+    if (norm.error) return res.status(400).json({ error: norm.error });
     await db('roles').insert({
-      id, code: b.code, name: b.name, surface: b.surface, description: b.description,
-      is_system: false, permissions: toJson(b.permissions), updated_at: sqlTime(),
+      id, code: b.code, name: b.name, surface: norm.surface, role_type: type, description: b.description,
+      is_system: false, permissions: toJson(norm.permissions), updated_at: sqlTime(),
     });
     await logActivity(db, req, 'roles.create', 'roles', id);
     res.status(201).json(roleRowToPublic(await db('roles').where({ id }).first()));
@@ -184,11 +191,19 @@ export function userRoutes(db: Knex) {
     const p = RoleBody.safeParse({ ...req.body, id: req.params.id });
     if (!p.success) return res.status(400).json({ error: p.error.issues[0]?.message || 'Invalid data.' });
     const b = p.data;
-    if (existing.id === req.auth!.user.roleId && WEB_PERMS.some((k) => !b.permissions[k])) {
+    const type: RoleType = b.roleType ?? (existing.role_type as RoleType);
+    if (type !== existing.role_type) {
+      if (existing.is_system) return res.status(409).json({ error: 'The role type of a system role cannot be changed.' });
+      const members = Number((await db('users').where({ role_id: existing.id }).count({ n: '*' }).first() as any).n);
+      if (members > 0) return res.status(409).json({ error: 'This role has users. Move them to another role before changing its type.' });
+    }
+    const norm = normalizeRole(type, b.permissions);
+    if (norm.error) return res.status(400).json({ error: norm.error });
+    if (existing.id === req.auth!.user.roleId && WEB_PERMS.some((k) => !norm.permissions[k])) {
       return res.status(403).json({ error: 'You cannot remove administrator permissions from your own role.' });
     }
     await db('roles').where({ id: existing.id }).update({
-      name: b.name, surface: b.surface, description: b.description, permissions: toJson(b.permissions), updated_at: sqlTime(),
+      name: b.name, surface: norm.surface, role_type: type, description: b.description, permissions: toJson(norm.permissions), updated_at: sqlTime(),
     });
     // Permissions changed: members must sign in again to be re-evaluated (access tokens are re-checked each request anyway).
     await logActivity(db, req, 'roles.update', 'roles', existing.id);

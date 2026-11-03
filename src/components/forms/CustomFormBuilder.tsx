@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowDown, ArrowUp, Plus, Save, Trash2, Power } from 'lucide-react';
+import { ArrowDown, ArrowUp, Copy, Eye, EyeOff, Plus, RotateCcw, Save, Trash2, Power } from 'lucide-react';
 import { api, ApiError } from '../../api/client';
 import type { AuditFormDefinition, FormTarget } from '../../types/infrastructure';
 import type { FormConfigPayload, FormField, FormFieldType } from '../../types/formConfig';
@@ -13,6 +13,8 @@ interface Props {
   onSaved: (form: AuditFormDefinition, config: FormConfigPayload) => void;
   onDeleted: (formId: string) => void;
   onCancelNew?: () => void;
+  /** A copy was made (switched off, ready to edit). */
+  onDuplicated?: (form: AuditFormDefinition, config: FormConfigPayload) => void;
   onToast: (m: string) => void;
 }
 
@@ -38,8 +40,12 @@ function keyFromLabel(label: string, taken: Set<string>): string {
   return k;
 }
 
-export function CustomFormBuilder({ form, config, canEdit, onCreated, onSaved, onDeleted, onCancelNew, onToast }: Props) {
+export function CustomFormBuilder({ form, config, canEdit, onCreated, onSaved, onDeleted, onCancelNew, onDuplicated, onToast }: Props) {
   const isNew = !form;
+  // A form nobody has answered is fully editable. After the first audit, saved questions keep their key and answer type
+  // (so old answers stay readable) but can still be renamed, reordered, made optional or hidden.
+  const answered = form?.submissionCount ?? 0;
+  const locked = answered > 0;
   useEffect(() => { if (isNew) document.getElementById('form-builder')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, [isNew]);
   const blank = () => ({
     title: '', shortTitle: '', description: '', target: 'distributor' as FormTarget,
@@ -63,6 +69,7 @@ export function CustomFormBuilder({ form, config, canEdit, onCreated, onSaved, o
     if (d.title.trim().length < 3) return 'Give the form a name (at least 3 letters).';
     if (d.shortTitle.trim().length < 2) return 'Give the form a short name for phone tabs.';
     if (d.fields.length === 0) return 'Add at least one question.';
+    if (!d.fields.some((f) => f.type !== 'photo' && f.visible !== false)) return 'At least one question must be shown on the phone.';
     for (const f of d.fields) {
       if (!f.label.trim()) return 'Every question needs a label.';
       if (f.type === 'select' && (f.options?.length ?? 0) < 2) return `"${f.label}" needs at least two choices.`;
@@ -74,7 +81,8 @@ export function CustomFormBuilder({ form, config, canEdit, onCreated, onSaved, o
   const fail = (e: unknown) => onToast(e instanceof ApiError || e instanceof Error ? e.message : 'Could not save.');
 
   const cleanFields = () => d.fields.map((f) => {
-    const out: Record<string, unknown> = { key: f.key, label: f.label.trim(), type: f.type, required: f.required, visible: true };
+    const out: Record<string, unknown> = { key: f.key, label: f.label.trim(), type: f.type, required: f.required, visible: f.visible !== false };
+    if (f.placeholder?.trim()) out.placeholder = f.placeholder.trim();
     if (f.helpText?.trim()) out.helpText = f.helpText.trim();
     if (f.type === 'select') out.options = (f.options || []).map((o) => o.trim()).filter(Boolean);
     if (f.type === 'number') { if (f.min !== undefined && !Number.isNaN(f.min)) out.min = f.min; if (f.max !== undefined && !Number.isNaN(f.max)) out.max = f.max; }
@@ -91,7 +99,7 @@ export function CustomFormBuilder({ form, config, canEdit, onCreated, onSaved, o
         onToast(`Form ${r.form.code} created. Phones get it on their next refresh.`);
         onCreated(r.form, r.config);
       } else {
-        const meta = await api<AuditFormDefinition>(`/api/forms/${form!.id}`, { method: 'PUT', json: { title: d.title.trim(), shortTitle: d.shortTitle.trim(), description: d.description.trim(), status: form!.status } });
+        const meta = await api<AuditFormDefinition>(`/api/forms/${form!.id}`, { method: 'PUT', json: { title: d.title.trim(), shortTitle: d.shortTitle.trim(), description: d.description.trim(), status: form!.status, ...(!locked && d.target !== form!.target ? { target: d.target } : {}) } });
         const cfg = await api<FormConfigPayload>(`/api/forms/${form!.id}/config`, { method: 'PUT', json: { settings: d.settings, fields: cleanFields() } });
         onToast('Form saved. Phones will download the new version.');
         onSaved({ ...form!, ...meta }, cfg);
@@ -110,6 +118,16 @@ export function CustomFormBuilder({ form, config, canEdit, onCreated, onSaved, o
     } catch (e) { fail(e); } finally { setBusy(false); }
   };
 
+  const duplicate = async () => {
+    if (!form) return;
+    setBusy(true);
+    try {
+      const r = await api<{ form: AuditFormDefinition; config: FormConfigPayload }>(`/api/forms/${form.id}/duplicate`, { method: 'POST' });
+      onToast(`Copied as ${r.form.code}. It is switched off until you turn it on.`);
+      onDuplicated?.(r.form, r.config);
+    } catch (e) { fail(e); } finally { setBusy(false); }
+  };
+
   const remove = async () => {
     if (!form || !confirm(`Delete "${form.title}"? This cannot be undone.`)) return;
     setBusy(true);
@@ -123,10 +141,12 @@ export function CustomFormBuilder({ form, config, canEdit, onCreated, onSaved, o
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <h2 className="text-base font-bold text-[#0F172A]">{isNew ? 'New audit form' : `Edit ${form!.code}`}</h2>
-          <p className="text-xs text-[#475569]">Every auditor can use every form. Questions you add here appear on phones automatically.</p>
+          <p className="text-xs text-[#475569]">Every auditor can use every form. Changes reach the mobile app the next time it refreshes.</p>
+          {locked && <p className="text-xs text-[#B45309] mt-1">{answered} audit{answered === 1 ? '' : 's'} already submitted: saved questions keep their answer type and cannot be removed (hide them instead). Everything else is editable.</p>}
         </div>
         {!isNew && canEdit && (
           <div className="flex gap-2">
+            <button type="button" disabled={busy} onClick={duplicate} className="min-h-[36px] px-3 text-xs font-bold rounded-md border border-[#CBD5E1] flex items-center gap-1.5 cursor-pointer"><Copy className="w-3.5 h-3.5" />Duplicate</button>
             <button type="button" disabled={busy} onClick={toggleStatus} className="min-h-[36px] px-3 text-xs font-bold rounded-md border border-[#CBD5E1] flex items-center gap-1.5 cursor-pointer"><Power className="w-3.5 h-3.5" />{form!.status === 'Active' ? 'Turn off' : 'Turn on'}</button>
             <button type="button" disabled={busy} onClick={remove} className="min-h-[36px] px-3 text-xs font-bold rounded-md border border-[#DC2626]/40 text-[#DC2626] flex items-center gap-1.5 cursor-pointer"><Trash2 className="w-3.5 h-3.5" />Delete</button>
           </div>
@@ -139,8 +159,8 @@ export function CustomFormBuilder({ form, config, canEdit, onCreated, onSaved, o
         <label className="text-xs font-bold text-[#0F172A] md:col-span-2">Description<textarea disabled={dis} value={d.description} rows={2} maxLength={1500} onChange={(e) => setD({ ...d, description: e.target.value })} className={`${inputCls} mt-1 font-normal`} /></label>
       </div>
 
-      <fieldset className="space-y-2" disabled={dis || !isNew}>
-        <legend className="text-xs font-bold text-[#0F172A]">What does the auditor audit with this form?{!isNew && <span className="font-normal text-[#475569]"> (fixed after creation)</span>}</legend>
+      <fieldset className="space-y-2" disabled={dis || (!isNew && locked)}>
+        <legend className="text-xs font-bold text-[#0F172A]">What does the auditor audit with this form?{!isNew && locked && <span className="font-normal text-[#475569]"> (fixed: audits already exist; duplicate the form to change it)</span>}</legend>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
           {TARGETS.map((t) => (
             <label key={t.id} className={`border rounded-lg p-3 text-xs cursor-pointer ${d.target === t.id ? 'border-[#1E3A5F] bg-[#E9EEF5]' : 'border-[#CBD5E1]'}`}>
@@ -158,7 +178,7 @@ export function CustomFormBuilder({ form, config, canEdit, onCreated, onSaved, o
             <div className="grid grid-cols-1 md:grid-cols-12 gap-2 items-end">
               <label className="md:col-span-6 text-[11px] font-bold text-[#475569]">Question<input disabled={dis} value={f.label} maxLength={80} onChange={(e) => setField(i, { label: e.target.value })} className={`${inputCls} mt-0.5 font-normal`} placeholder="e.g. Fridge temperature (°C)" /></label>
               <label className="md:col-span-3 text-[11px] font-bold text-[#475569]">Answer type
-                <select disabled={dis || savedKeys.has(f.key)} value={f.type} onChange={(e) => setField(i, { type: e.target.value as FormFieldType, options: e.target.value === 'select' ? f.options || ['Good', 'Poor'] : undefined })} className={`${inputCls} mt-0.5 font-normal`}>
+                <select disabled={dis || (locked && savedKeys.has(f.key))} value={f.type} onChange={(e) => setField(i, { type: e.target.value as FormFieldType, options: e.target.value === 'select' ? f.options || ['Good', 'Poor'] : undefined })} className={`${inputCls} mt-0.5 font-normal`}>
                   {Object.entries(TYPE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
                 </select>
               </label>
@@ -166,7 +186,7 @@ export function CustomFormBuilder({ form, config, canEdit, onCreated, onSaved, o
               <div className="md:col-span-1 flex gap-1 justify-end">
                 <button type="button" aria-label="Move up" disabled={dis || i === 0} onClick={() => move(i, -1)} className="w-8 h-8 border border-[#CBD5E1] rounded flex items-center justify-center disabled:opacity-40 cursor-pointer"><ArrowUp className="w-3.5 h-3.5" /></button>
                 <button type="button" aria-label="Move down" disabled={dis || i === d.fields.length - 1} onClick={() => move(i, 1)} className="w-8 h-8 border border-[#CBD5E1] rounded flex items-center justify-center disabled:opacity-40 cursor-pointer"><ArrowDown className="w-3.5 h-3.5" /></button>
-                <button type="button" aria-label="Remove question" disabled={dis || savedKeys.has(f.key)} title={savedKeys.has(f.key) ? 'Saved questions keep their history; hide by turning the form off' : ''} onClick={() => setD((p) => ({ ...p, fields: p.fields.filter((_, k) => k !== i) }))} className="w-8 h-8 border border-[#DC2626]/40 text-[#DC2626] rounded flex items-center justify-center disabled:opacity-40 cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></button>
+                <button type="button" aria-label="Remove question" disabled={dis || (locked && savedKeys.has(f.key))} title={locked && savedKeys.has(f.key) ? 'This question has answers: hide it instead of removing it' : ''} onClick={() => setD((p) => ({ ...p, fields: p.fields.filter((_, k) => k !== i) }))} className="w-8 h-8 border border-[#DC2626]/40 text-[#DC2626] rounded flex items-center justify-center disabled:opacity-40 cursor-pointer"><Trash2 className="w-3.5 h-3.5" /></button>
               </div>
             </div>
             {f.type === 'select' && (
@@ -180,6 +200,15 @@ export function CustomFormBuilder({ form, config, canEdit, onCreated, onSaved, o
                 <label className="text-[11px] font-bold text-[#475569]">Maximum<input disabled={dis} type="number" value={f.max ?? ''} onChange={(e) => setField(i, { max: e.target.value === '' ? undefined : Number(e.target.value) })} className={`${inputCls} mt-0.5 font-mono font-normal`} /></label>
               </div>
             )}
+            <div className="flex items-center gap-4 flex-wrap">
+              <label className="text-[11px] font-bold text-[#475569] flex items-center gap-2 min-h-[32px] cursor-pointer">
+                <input type="checkbox" disabled={dis} checked={f.visible !== false} onChange={(e) => setField(i, { visible: e.target.checked })} />
+                {f.visible !== false ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}Show on phone
+              </label>
+              {(f.type === 'text' || f.type === 'textarea' || f.type === 'number') && (
+                <label className="text-[11px] font-bold text-[#475569] flex-1 min-w-[200px]">Placeholder (optional)<input disabled={dis} value={f.placeholder || ''} maxLength={80} onChange={(e) => setField(i, { placeholder: e.target.value })} className={`${inputCls} mt-0.5 font-normal`} /></label>
+              )}
+            </div>
             <label className="text-[11px] font-bold text-[#475569] block">Help text (optional)<input disabled={dis} value={f.helpText || ''} maxLength={200} onChange={(e) => setField(i, { helpText: e.target.value })} className={`${inputCls} mt-0.5 font-normal`} /></label>
           </div>
         ))}
@@ -196,6 +225,7 @@ export function CustomFormBuilder({ form, config, canEdit, onCreated, onSaved, o
 
       {canEdit && (
         <div className="flex gap-2 justify-end">
+          {!isNew && dirty && <button type="button" disabled={busy} onClick={() => { setD(fromProps()); }} className="min-h-[40px] px-4 rounded-md border border-[#CBD5E1] text-sm font-bold flex items-center gap-2 cursor-pointer"><RotateCcw className="w-4 h-4" />Discard changes</button>}
           {isNew && <button type="button" onClick={onCancelNew} className="min-h-[40px] px-4 rounded-md border border-[#CBD5E1] text-sm font-bold cursor-pointer">Cancel</button>}
           <button type="button" disabled={busy || !dirty} onClick={save} className="min-h-[40px] px-4 rounded-md bg-[#1E3A5F] text-white text-sm font-bold flex items-center gap-2 disabled:opacity-50 cursor-pointer"><Save className="w-4 h-4" />{isNew ? 'Create form' : 'Save changes'}</button>
         </div>
